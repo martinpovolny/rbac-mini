@@ -267,3 +267,43 @@ func TestReady(t *testing.T) {
 		t.Errorf("unhealthy: status = %d, want 503", rec.Code)
 	}
 }
+
+// TestAccessInvalidParams mirrors test_get_access_with_invalid_limit /
+// invalid_ordering_value: malformed query params are 400 with the v1 errors
+// envelope, not 500.
+func TestAccessInvalidParams(t *testing.T) {
+	s, header := testServerSeeded(t)
+	for name, query := range map[string]string{
+		"bad limit":  "application=app&limit=abc",
+		"zero limit": "application=app&limit=0",
+		"bad order":  "application=app&order_by=bogus",
+		"bad status": "application=app&status=bogus",
+		"bad offset": "application=app&offset=-1",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/access/?"+query, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", name, rec.Code)
+			continue
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Errorf("%s: body is not JSON: %v", name, err)
+			continue
+		}
+		if _, ok := body["errors"]; !ok {
+			t.Errorf("%s: body has no errors envelope: %s", name, rec.Body.String())
+		}
+	}
+
+	// Sanity: a valid request still passes.
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/access/?application=app&limit=10", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("valid: status = %d, want 200", rec.Code)
+	}
+}
