@@ -1,8 +1,6 @@
 package principal
 
 import (
-	"errors"
-
 	"rbac-go/internal/store"
 )
 
@@ -20,5 +18,30 @@ type Principal struct {
 // List returns tenant user principals (non-cross-account), ordered by
 // username, with the total count for meta.
 func List(db *store.DB, orgID string, limit, offset int) (items []Principal, total int, err error) {
-	return nil, 0, errors.New("not implemented")
+	if err := db.QueryRow(`SELECT COUNT(*) FROM principals pr
+		JOIN tenants t ON t.id = pr.tenant_id
+		WHERE t.org_id = ? AND pr.type = 'user' AND pr.cross_account = 0`,
+		orgID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	q := `SELECT pr.username FROM principals pr
+		JOIN tenants t ON t.id = pr.tenant_id
+		WHERE t.org_id = ? AND pr.type = 'user' AND pr.cross_account = 0
+		ORDER BY pr.username LIMIT ? OFFSET ?`
+	rows, err := db.Query(q, orgID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items = []Principal{}
+	for rows.Next() {
+		var username string
+		if err := rows.Scan(&username); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, Principal{
+			Username: username, Email: "baz", FirstName: "foo", LastName: "bar",
+		})
+	}
+	return items, total, rows.Err()
 }

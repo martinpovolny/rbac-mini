@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"rbac-go/internal/access"
 	"rbac-go/internal/identity"
+	"rbac-go/internal/principal"
 	"rbac-go/internal/store"
 )
 
@@ -35,6 +36,7 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("GET /api/rbac/v1/status/", s.handleStatus)
 	s.mux.HandleFunc("GET /api/rbac/v1/ready/", s.handleReady)
 	s.mux.HandleFunc("GET /api/rbac/v1/access/", s.handleAccess)
+	s.mux.HandleFunc("GET /api/rbac/v1/principals/", s.handlePrincipals)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
 }
@@ -81,6 +83,71 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 // handleStatus is the operator probe target (see SPEC §2).
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"api_version": 1})
+}
+
+// handlePrincipals serves GET /api/rbac/v1/principals/ (Users page).
+func (s *Server) handlePrincipals(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := ensureTenant(s.db, user.OrgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	q := r.URL.Query()
+	limit, offset := 10, 0
+	if raw := q.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 1000 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+	}
+	if raw := q.Get("offset"); raw != "" {
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+	}
+	items, total, err := principal.List(s.db, user.OrgID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	link := func(off int, present bool) *string {
+		if !present {
+			return nil
+		}
+		v, _ := url.ParseQuery(r.URL.RawQuery)
+		v.Set("limit", strconv.Itoa(limit))
+		v.Set("offset", strconv.Itoa(off))
+		s := r.URL.Path + "?" + v.Encode()
+		return &s
+	}
+	lastOff := 0
+	if total > 0 {
+		lastOff = (total - 1) / limit * limit
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meta": map[string]any{"count": total, "limit": limit, "offset": offset},
+		"links": map[string]any{
+			"first":    link(0, true),
+			"next":     link(offset+limit, offset+limit < total),
+			"previous": link(ifGE0(offset-limit), offset-limit >= 0),
+			"last":     link(lastOff, true),
+		},
+		"data": items,
+	})
+}
+
+func ifGE0(v int) int {
+	if v < 0 {
+		return 0
+	}
+	return v
 }
 
 // handleReady pings the SQL DB: 200 when reachable, 503 otherwise.
