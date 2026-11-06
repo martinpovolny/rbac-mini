@@ -182,7 +182,111 @@ func isUniqueViolation(err error) bool {
 	return strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "duplicate key value")
 }
 
-// ErrProtected is returned for writes to default groups.
+// ErrUnknownPrincipals lists usernames that do not exist in the tenant.
+type ErrUnknownPrincipals struct{ Names []string }
+
+func (e ErrUnknownPrincipals) Error() string {
+	return fmt.Sprintf("User(s) %v not found", e.Names)
+}
+
+// AddMembers adds existing tenant principals to a group. Unknown usernames
+// are a 400 like Django's add/remove validation.
+func AddMembers(db *store.DB, orgID, groupUUID string, usernames []string) error {
+	return changeMembers(db, orgID, groupUUID, usernames, true)
+}
+
+// RemoveMembers removes principals from a group; unknown names are a 400.
+func RemoveMembers(db *store.DB, orgID, groupUUID string, usernames []string) error {
+	return changeMembers(db, orgID, groupUUID, usernames, false)
+}
+
+func changeMembers(db *store.DB, orgID, groupUUID string, usernames []string, add bool) error {
+	var groupID int64
+	var pd int
+	if err := db.QueryRow(`SELECT g.id, g.platform_default FROM groups g
+		JOIN tenants t ON t.id = g.tenant_id
+		WHERE g.uuid = ? AND t.org_id = ?`, groupUUID, orgID).Scan(&groupID, &pd); err != nil {
+		return err
+	}
+	action := "REMOVE"
+	if add {
+		action = "ADD"
+	}
+	if pd != 0 {
+		return ErrProtected{Action: action, Kind: "platform_default"}
+	}
+	lowered := map[string]bool{}
+	var distinct []string
+	for _, u := range usernames {
+		u = strings.ToLower(u)
+		if !lowered[u] {
+			lowered[u] = true
+			distinct = append(distinct, u)
+		}
+	}
+	if len(distinct) == 0 {
+		return nil
+	}
+	placeholders := make([]string, 0, len(distinct))
+	args := []any{orgID}
+	for _, u := range distinct {
+		placeholders = append(placeholders, "?")
+		args = append(args, u)
+	}
+	rows, err := db.Query(`SELECT id, username FROM principals WHERE tenant_id =
+		(SELECT id FROM tenants WHERE org_id = ?) AND type = 'user'
+		AND cross_account = 0 AND username IN (`+strings.Join(placeholders, ",")+`)`, args...)
+	if err != nil {
+		return err
+	}
+	idByName := map[string]int64{}
+	for rows.Next() {
+		var id int64
+		var u string
+		if err := rows.Scan(&id, &u); err != nil {
+			rows.Close()
+			return err
+		}
+		idByName[strings.ToLower(u)] = id
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var missing []string
+	for _, u := range distinct {
+		if _, ok := idByName[u]; !ok {
+			missing = append(missing, u)
+		}
+	}
+	if len(missing) > 0 {
+		return ErrUnknownPrincipals{Names: missing}
+	}
+	for _, u := range distinct {
+		if add {
+			if _, err := db.Exec(`INSERT INTO group_principals(group_id, principal_id)
+				VALUES(?, ?) ON CONFLICT(group_id, principal_id) DO NOTHING`,
+				groupID, idByName[u]); err != nil {
+				return err
+			}
+		} else {
+			if _, err := db.Exec(`DELETE FROM group_principals WHERE group_id=? AND principal_id=?`,
+				groupID, idByName[u]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func anySlice(in []string) []any {
+	out := make([]any, 0, len(in))
+	for _, v := range in {
+		out = append(out, v)
+	}
+	return out
+}
+
 type ErrProtected struct{ Action, Kind string }
 
 func (e ErrProtected) Error() string {

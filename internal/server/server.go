@@ -58,6 +58,8 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("DELETE /api/rbac/v1/groups/{uuid}/", s.handleGroupDelete)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipals)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/roles/", s.handleGroupRoles)
+	s.mux.HandleFunc("POST /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipalsAdd)
+	s.mux.HandleFunc("DELETE /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipalsRemove)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
 }
@@ -691,6 +693,68 @@ func (s *Server) handleGroupRoles(w http.ResponseWriter, r *http.Request) {
 		},
 		"data": items,
 	})
+}
+
+// groupMembersBody parses {usernames: [...]} member payloads.
+func groupMembersBody(w http.ResponseWriter, r *http.Request) ([]string, bool) {
+	var body struct {
+		Usernames []string `json:"usernames"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return nil, false
+	}
+	return body.Usernames, true
+}
+
+func groupMembersError(w http.ResponseWriter, err error) {
+	var unknown group.ErrUnknownPrincipals
+	var protected group.ErrProtected
+	if errors.As(err, &unknown) || errors.As(err, &protected) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "unexpected error")
+}
+
+// handleGroupPrincipalsAdd serves POST /api/rbac/v1/groups/{uuid}/principals/.
+func (s *Server) handleGroupPrincipalsAdd(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	usernames, ok := groupMembersBody(w, r)
+	if !ok {
+		return
+	}
+	if err := group.AddMembers(s.db, user.OrgID, r.PathValue("uuid"), usernames); err != nil {
+		groupMembersError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"usernames": usernames})
+}
+
+// handleGroupPrincipalsRemove serves DELETE /api/rbac/v1/groups/{uuid}/principals/.
+func (s *Server) handleGroupPrincipalsRemove(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	usernames, ok := groupMembersBody(w, r)
+	if !ok {
+		return
+	}
+	if err := group.RemoveMembers(s.db, user.OrgID, r.PathValue("uuid"), usernames); err != nil {
+		groupMembersError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"usernames": usernames})
 }
 
 // handleGroupPrincipals serves GET /api/rbac/v1/groups/{uuid}/principals/.
