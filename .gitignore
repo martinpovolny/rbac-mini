@@ -1,0 +1,16 @@
+# Binaries
+/rbac-go
+/bin/
+
+# Test output
+*.test
+coverage.out
+coverage.html
+
+# SQLite dev databases (keep schema/migrations, not data)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Go build cache is outside the repo; nothing else needed.
