@@ -51,6 +51,7 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("PATCH /api/rbac/v1/roles/{uuid}/", s.handleRolePatch)
 	s.mux.HandleFunc("DELETE /api/rbac/v1/roles/{uuid}/", s.handleRoleDelete)
 	s.mux.HandleFunc("GET /api/rbac/v1/roles/{uuid}/", s.handleRoleDetail)
+	s.mux.HandleFunc("GET /api/rbac/v1/roles/{uuid}/access/", s.handleRoleAccess)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/", s.handleGroupsList)
 	s.mux.HandleFunc("POST /api/rbac/v1/groups/", s.handleGroupCreate)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/", s.handleGroupDetail)
@@ -1035,6 +1036,56 @@ func (s *Server) handleGroupsList(w http.ResponseWriter, r *http.Request) {
 			"last":  linkURL(r, lastOffset(total, limit), limit),
 		},
 		"data": items,
+	})
+}
+
+// handleRoleAccess serves GET /api/rbac/v1/roles/{uuid}/access/.
+func (s *Server) handleRoleAccess(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	role, err := role.Get(s.db, user.OrgID, r.PathValue("uuid"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	q := r.URL.Query()
+	limit, offset := 10, 0
+	if raw := q.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 1000 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+	}
+	if raw := q.Get("offset"); raw != "" {
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+	}
+	total := len(role.Access)
+	page := role.Access
+	if offset < total {
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		page = role.Access[offset:end]
+	} else {
+		page = []access.Entry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meta": map[string]any{"count": total, "limit": limit, "offset": offset},
+		"links": map[string]any{
+			"first": linkURL(r, 0, limit),
+			"next":  linkURLOrNil(r, offset+limit, limit, offset+limit < total),
+			"last":  linkURL(r, lastOffset(total, limit), limit),
+		},
+		"data": page,
 	})
 }
 
