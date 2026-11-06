@@ -661,3 +661,50 @@ func TestDeleteRole(t *testing.T) {
 		}
 	}
 }
+
+// TestGroupsList: Users/Groups page. Default/system groups are excluded like
+// Django's _filter_default_groups; counts are annotated per group.
+func TestGroupsList(t *testing.T) {
+	s, header := testServerSeeded(t)
+	db := s.db
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO groups(uuid, name, platform_default, tenant_id) VALUES('g-pd','Default access',1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO groups(uuid, name, admin_default, tenant_id) VALUES('g-ad','Admin default',1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/?limit=20", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Meta struct {
+			Count int `json:"count"`
+		} `json:"meta"`
+		Data []struct {
+			UUID           string `json:"uuid"`
+			Name           string `json:"name"`
+			PrincipalCount int    `json:"principalCount"`
+			RoleCount      int    `json:"roleCount"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Meta.Count != 1 || len(body.Data) != 1 {
+		t.Fatalf("count = %d, len(data) = %d, want 1 (groupA only)", body.Meta.Count, len(body.Data))
+	}
+	g := body.Data[0]
+	if g.Name != "groupA" || g.PrincipalCount != 1 || g.RoleCount != 1 {
+		t.Errorf("group = %+v, want groupA with 1 principal and 1 role", g)
+	}
+}
