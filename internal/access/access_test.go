@@ -57,6 +57,21 @@ func testDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestGetAccessNoAppSupplied(t *testing.T) {
+	db := testDB(t)
+	seedFixture(t, db)
+
+	// No application filter returns everything (openapi: "When no application
+	// is supplied, all permissions for the principal are returned").
+	got, err := Query(db, "100001", "test_user", nil)
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].Permission != "app:*:*" {
+		t.Errorf("got = %v, want [app:*:*]", got)
+	}
+}
+
 func TestGetAccessUnknownPrincipalEmpty(t *testing.T) {
 	db := testDB(t)
 	seedFixture(t, db)
