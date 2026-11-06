@@ -413,3 +413,64 @@ func TestPermissionsOptions(t *testing.T) {
 		t.Errorf("data = %v, want [cost-management]", body.Data)
 	}
 }
+
+// TestCreateRole mirrors the wizard Step 4: POST a role with access list →
+// 201 with uuid; the grant shows up in access.
+func TestCreateRole(t *testing.T) {
+	s, header := testServerSeeded(t)
+	t.Setenv("ROLE_CREATE_ALLOW_LIST", "cost-management")
+	body := `{"name":"roleA","access":[{"permission":"cost-management:aws.account:read","resourceDefinitions":[]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/rbac/v1/roles/", strings.NewReader(body))
+	req.Header.Set("X-Rh-Identity", header)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		UUID string `json:"uuid"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if created.UUID == "" || created.Name != "roleA" {
+		t.Errorf("created = %+v, want uuid + name roleA", created)
+	}
+
+	// The grant is visible on detail.
+	req = httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/"+created.UUID+"/", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want 200", rec.Code)
+	}
+}
+
+// TestCreateRoleValidation mirrors validate_role: unknown allow-list app and
+// unknown permission are 400.
+func TestCreateRoleValidation(t *testing.T) {
+	s, header := testServerSeeded(t)
+	t.Setenv("ROLE_CREATE_ALLOW_LIST", "cost-management")
+	for name, pw := range map[string][2]string{
+		"foreign app":  {"app:foo:bar", "Custom roles cannot be created for app"},
+		"unknown perm": {"cost-management:nope:nope", "Permission does not exist"},
+	} {
+		body := `{"name":"roleX","access":[{"permission":"` + pw[0] + `","resourceDefinitions":[]}]}`
+		req := httptest.NewRequest(http.MethodPost, "/api/rbac/v1/roles/", strings.NewReader(body))
+		req.Header.Set("X-Rh-Identity", header)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", name, rec.Code)
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), pw[1]) {
+			t.Errorf("%s: body %s, want %q", name, rec.Body.String(), pw[1])
+		}
+	}
+}

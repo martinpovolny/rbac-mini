@@ -609,6 +609,546 @@
           }
         }
       }
+    },
+    "/roles/": {
+      "post": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Create a role for a tenant",
+        "operationId": "createRole",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleIn"
+              }
+            }
+          },
+          "description": "Role to create",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "An object describing the role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleWithAccess"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to create role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "List the roles for a tenant",
+        "description": "By default, responses are sorted in ascending order by role name",
+        "operationId": "listRoles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "$ref": "#/components/parameters/NameFilter"
+          },
+          {
+            "$ref": "#/components/parameters/SystemFilter"
+          },
+          {
+            "in": "query",
+            "name": "display_name",
+            "required": false,
+            "description": "Parameter for filtering resource by display_name using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/NameMatchCriteria"
+          },
+          {
+            "$ref": "#/components/parameters/ScopeFilter"
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "display_name",
+                "modified",
+                "policyCount"
+              ]
+            }
+          },
+          {
+            "name": "add_fields",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for add list of fields to display for roles.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "groups_in",
+                  "groups_in_count",
+                  "access"
+                ]
+              }
+            },
+            "explode": false,
+            "style": "form"
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "description": "Unique username of the principal to obtain roles for (only available for admins, and if supplied, takes precedence over the identity header).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "description": "The application name(s) to filter roles by, from permissions or external tenant name. This is an exact match. You may also use a comma-separated list to match on multiple applications.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "permission",
+            "in": "query",
+            "description": "The permission(s) to filter roles by. This is an exact match. You may also use a comma-separated list to match on multiple permissions.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_tenant",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering roles by external tenant name using string search.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of role objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolePaginationDynamic"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/roles/{uuid}/": {
+      "get": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Get a role in the tenant",
+        "operationId": "getRole",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to get",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ScopeFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A role object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleWithAccess"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to get role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Delete a role in the tenant",
+        "operationId": "deleteRole",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to delete",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Role deleted"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to delete role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Update a role in the tenant",
+        "operationId": "updateRole",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to update",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolePut"
+              }
+            }
+          },
+          "description": "Update to a role",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to update role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Patch a role in the tenant",
+        "operationId": "patchRole",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to update",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolePatch"
+              }
+            }
+          },
+          "description": "Patch to a role"
+        },
+        "responses": {
+          "200": {
+            "description": "Role patched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleWithAccess"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to patch role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/roles/{uuid}/access/": {
+      "get": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Get access for a role in the tenant",
+        "operationId": "getRoleAccess",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of the role",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of the access objects for a role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessPagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to get access for role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1069,6 +1609,276 @@
                 "type": "array",
                 "items": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Role": {
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "RoleA"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "ARoleName"
+          },
+          "description": {
+            "type": "string",
+            "example": "A description of RoleA"
+          }
+        }
+      },
+      "RoleIn": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Role"
+          },
+          {
+            "type": "object",
+            "required": [
+              "access"
+            ],
+            "properties": {
+              "access": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RolePagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoleOut"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RolePaginationDynamic": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoleOutDynamic"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RoleOut": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Role"
+          },
+          {
+            "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
+          },
+          {
+            "properties": {
+              "policyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "accessCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "applications": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "example": "catalog"
+                }
+              },
+              "system": {
+                "type": "boolean",
+                "default": false
+              },
+              "platform_default": {
+                "type": "boolean",
+                "default": false
+              },
+              "admin_default": {
+                "type": "boolean",
+                "default": false
+              },
+              "external_role_id": {
+                "type": "string",
+                "example": "ExternalRoleId"
+              },
+              "external_tenant": {
+                "type": "string",
+                "example": "ExternalTenant"
+              }
+            }
+          }
+        ]
+      },
+      "RoleOutDynamic": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Role"
+          },
+          {
+            "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
+          },
+          {
+            "type": "object",
+            "required": [
+              "policyCount",
+              "accessCount",
+              "applications",
+              "system",
+              "platform_default",
+              "admin_default"
+            ],
+            "properties": {
+              "policyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "accessCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "applications": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "example": "catalog"
+                }
+              },
+              "system": {
+                "type": "boolean",
+                "default": false
+              },
+              "platform_default": {
+                "type": "boolean",
+                "default": false
+              },
+              "admin_default": {
+                "type": "boolean",
+                "default": false
+              },
+              "groups_in_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "groups_in": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdditionalGroup"
+                }
+              },
+              "external_role_id": {
+                "type": "string",
+                "example": "ExternalRoleId"
+              },
+              "external_tenant": {
+                "type": "string",
+                "example": "ExternalTenant"
+              },
+              "access": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RolePatch": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "RoleA"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "ARoleName"
+          },
+          "description": {
+            "type": "string",
+            "example": "A description of RoleA"
+          }
+        }
+      },
+      "RolePut": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePatch"
+          },
+          {
+            "type": "object",
+            "required": [
+              "access"
+            ],
+            "properties": {
+              "access": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Access"
+                },
+                "description": "List of access permissions. This array can be empty."
+              }
+            }
+          }
+        ]
+      },
+      "RoleWithAccess": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RoleOut"
+          },
+          {
+            "type": "object",
+            "required": [
+              "access"
+            ],
+            "properties": {
+              "access": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Access"
                 }
               }
             }
