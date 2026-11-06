@@ -170,3 +170,24 @@ func TestResolveDatabaseURL(t *testing.T) {
 		t.Errorf("empty env resolved empty, want dev default")
 	}
 }
+
+// TestPrepareDBSeeds is the distroless-friendly "startup script": opening the
+// DB through one helper that migrates and optionally seeds, shared by serve
+// and the operator migration Job path.
+func TestPrepareDBSeeds(t *testing.T) {
+	dsn := "sqlite://" + t.TempDir() + "/rbac.db"
+	db, err := prepareDB(dsn, true)
+	if err != nil {
+		t.Fatalf("prepareDB: %v", err)
+	}
+	db.Close()
+	var n int
+	db2, err := openDatabase(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	if err := db2.QueryRow(`SELECT COUNT(*) FROM roles WHERE name='Cost Administrator'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("Cost Administrator rows = %d, err = %v; want 1", n, err)
+	}
+}
