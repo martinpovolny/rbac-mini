@@ -143,3 +143,30 @@ func TestRunFlagErrors(t *testing.T) {
 		t.Errorf("serve -h: err = %v, want flag.ErrHelp", err)
 	}
 }
+
+// TestResolveDatabaseURL: DATABASE_URL wins; otherwise the operator's legacy
+// DATABASE_{HOST,PORT,NAME,USER,PASSWORD} assembles a postgres URL. The
+// operator always injects those, so the binary must not require DATABASE_URL.
+func TestResolveDatabaseURL(t *testing.T) {
+	get := func(m map[string]string) func(string) string {
+		return func(k string) string { return m[k] }
+	}
+	if got := resolveDatabaseURL(get(map[string]string{
+		"DATABASE_URL":  "sqlite:///x.db",
+		"DATABASE_HOST": "db", "DATABASE_PORT": "5432",
+		"DATABASE_NAME": "n", "DATABASE_USER": "u", "DATABASE_PASSWORD": "p",
+	})); got != "sqlite:///x.db" {
+		t.Errorf("explicit URL = %q, want sqlite:///x.db", got)
+	}
+	got := resolveDatabaseURL(get(map[string]string{
+		"DATABASE_HOST": "db", "DATABASE_PORT": "5432",
+		"DATABASE_NAME": "costonprem_rbac", "DATABASE_USER": "rbac", "DATABASE_PASSWORD": "p",
+	}))
+	want := "postgres://rbac:p@db:5432/costonprem_rbac?sslmode=disable"
+	if got != want {
+		t.Errorf("legacy env = %q, want %q", got, want)
+	}
+	if got := resolveDatabaseURL(get(map[string]string{})); got == "" {
+		t.Errorf("empty env resolved empty, want dev default")
+	}
+}
