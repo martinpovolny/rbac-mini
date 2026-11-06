@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"rbac-go/internal/access"
 	"rbac-go/internal/identity"
+	"rbac-go/internal/permission"
 	"rbac-go/internal/principal"
 	"rbac-go/internal/store"
 )
@@ -37,6 +39,8 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("GET /api/rbac/v1/ready/", s.handleReady)
 	s.mux.HandleFunc("GET /api/rbac/v1/access/", s.handleAccess)
 	s.mux.HandleFunc("GET /api/rbac/v1/principals/", s.handlePrincipals)
+	s.mux.HandleFunc("GET /api/rbac/v1/permissions/", s.handlePermissions)
+	s.mux.HandleFunc("GET /api/rbac/v1/permissions/options/", s.handlePermissionOptions)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
 }
@@ -303,6 +307,114 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		"links": links,
 		"data":  page,
 	})
+}
+
+// permissionFilter builds the query filter shared by list + options.
+func permissionFilter(r *http.Request) (permission.Filter, bool) {
+	q := r.URL.Query()
+	split := func(key string) []string {
+		raw := strings.TrimSpace(q.Get(key))
+		if raw == "" {
+			return nil
+		}
+		return strings.Split(raw, ",")
+	}
+	allowedOnly := q.Get("allowed_only") == "true"
+	var allowList []string
+	if allowedOnly {
+		allowList = strings.Split(os.Getenv("ROLE_CREATE_ALLOW_LIST"), ",")
+	}
+	return permission.Filter{
+		Applications:   split("application"),
+		ResourceTypes:  split("resource_type"),
+		Verbs:          split("verb"),
+		ExcludeGlobals: q.Get("exclude_globals") == "true",
+		AllowedOnly:    allowedOnly,
+		AllowList:      allowList,
+	}, true
+}
+
+// handlePermissions serves GET /api/rbac/v1/permissions/ (role wizard).
+func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := ensureTenant(s.db, user.OrgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	filter, _ := permissionFilter(r)
+	limit, offset := 10, 0
+	q := r.URL.Query()
+	if raw := q.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 1000 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+	}
+	if raw := q.Get("offset"); raw != "" {
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+	}
+	items, total, err := permission.List(s.db, user.OrgID, filter, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	link := func(off int, present bool) *string {
+		if !present {
+			return nil
+		}
+		v, _ := url.ParseQuery(r.URL.RawQuery)
+		v.Set("limit", strconv.Itoa(limit))
+		v.Set("offset", strconv.Itoa(off))
+		s := r.URL.Path + "?" + v.Encode()
+		return &s
+	}
+	lastOff := 0
+	if total > 0 {
+		lastOff = (total - 1) / limit * limit
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meta": map[string]any{"count": total, "limit": limit, "offset": offset},
+		"links": map[string]any{
+			"first":    link(0, true),
+			"next":     link(offset+limit, offset+limit < total),
+			"previous": link(ifGE0(offset-limit), offset-limit >= 0),
+			"last":     link(lastOff, true),
+		},
+		"data": items,
+	})
+}
+
+// handlePermissionOptions serves GET /api/rbac/v1/permissions/options/.
+func (s *Server) handlePermissionOptions(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := ensureTenant(s.db, user.OrgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	field := r.URL.Query().Get("field")
+	if field == "" {
+		field = "application"
+	}
+	filter, _ := permissionFilter(r)
+	values, err := permission.Options(s.db, user.OrgID, field, filter)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid field")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": values})
 }
 
 func parts(permission string) [3]string {
