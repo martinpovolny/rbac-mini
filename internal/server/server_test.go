@@ -242,3 +242,28 @@ func TestStatus(t *testing.T) {
 		t.Errorf("api_version = %v, want 1", body["api_version"])
 	}
 }
+
+// TestReady: 200 when the DB pings, 503 when it does not (readiness gate
+// for the operator rollout, cf. ConditionRBACReady).
+func TestReady(t *testing.T) {
+	s := testServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/ready/", nil)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("healthy: status = %d, want 200", rec.Code)
+	}
+
+	db, err := store.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close() // unreachable DB
+	sick := New(db)
+	req = httptest.NewRequest(http.MethodGet, "/api/rbac/v1/ready/", nil)
+	rec = httptest.NewRecorder()
+	sick.ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("unhealthy: status = %d, want 503", rec.Code)
+	}
+}
