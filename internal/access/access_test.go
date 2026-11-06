@@ -114,3 +114,61 @@ func TestGetAccessSuccess(t *testing.T) {
 		t.Errorf("attributeFilter = %v, want key1.id/equal/value1", af)
 	}
 }
+
+// addSecondApp grants roleA a cost-management permission alongside app:*:*.
+func addSecondApp(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.Exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
+		VALUES('cost-management','aws.account','read','cost-management:aws.account:read',
+		(SELECT id FROM tenants WHERE org_id='100001'))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO access(role_id, permission_id, tenant_id) VALUES(
+		(SELECT id FROM roles WHERE uuid='r-a'),
+		(SELECT id FROM permissions WHERE permission='cost-management:aws.account:read'),
+		(SELECT id FROM tenants WHERE org_id='100001'))`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGetAccessMultipleApps mirrors test_get_access_multiple_apps_supplied:
+// a comma-separated application list returns each app's permissions.
+func TestGetAccessMultipleApps(t *testing.T) {
+	db := testDB(t)
+	seedFixture(t, db)
+	addSecondApp(t, db)
+
+	got, err := Query(db, "100001", "test_user", []string{"app", "cost-management"})
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(access) = %d, want 2", len(got))
+	}
+}
+
+// TestGetAccessExactMatchOnly mirrors no_partial_match / no_subset_match:
+// the application filter is an exact match, never LIKE.
+func TestGetAccessExactMatchOnly(t *testing.T) {
+	db := testDB(t)
+	seedFixture(t, db)
+	addSecondApp(t, db)
+
+	for _, apps := range [][]string{{"cost"}, {"cost-management:aws"}, {"App"}} {
+		got, err := Query(db, "100001", "test_user", apps)
+		if err != nil {
+			t.Fatalf("Query(%v) returned error: %v", apps, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("Query(%v) = %v, want empty (exact match only)", apps, got)
+		}
+	}
+
+	got, err := Query(db, "100001", "test_user", []string{"cost-management"})
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].Permission != "cost-management:aws.account:read" {
+		t.Errorf("got = %v, want [cost-management:aws.account:read]", got)
+	}
+}
