@@ -64,20 +64,17 @@ func run(args []string, databaseURL string) error {
 		cmd, rest = args[0], args[1:]
 	}
 	open := func() (*store.DB, error) {
-		db, err := openDatabase(databaseURL)
-		if err != nil {
-			return nil, err
-		}
-		return db, store.Migrate(db)
+		return prepareDB(databaseURL, false)
 	}
 	switch cmd {
 	case "serve":
 		fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 		addr := fs.String("addr", ":8080", "listen address")
+		withSeed := fs.Bool("seed", false, "run seed on startup (idempotent; operator Job covers this by default)")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		bound, stop, err := startServer(databaseURL, *addr)
+		bound, stop, err := startServerWith(databaseURL, *addr, *withSeed)
 		if err != nil {
 			return err
 		}
@@ -160,15 +157,36 @@ func openDatabase(databaseURL string) (*store.DB, error) {
 	return nil, fmt.Errorf("unsupported DATABASE_URL %q (want sqlite:// or postgres://)", databaseURL)
 }
 
-// startServer opens, migrates, and serves on addr (use 127.0.0.1:0 for an
-// ephemeral port). It returns the bound address and a stop func.
-func startServer(databaseURL, addr string) (string, func(), error) {
+// prepareDB is the shared startup path (the distroless-friendly "startup
+// script"): open, migrate, and optionally seed. Used by serve --seed and by
+// the migrate/seed/bootstrap/sync commands via run().
+func prepareDB(databaseURL string, withSeed bool) (*store.DB, error) {
 	db, err := openDatabase(databaseURL)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if err := store.Migrate(db); err != nil {
 		db.Close()
+		return nil, err
+	}
+	if withSeed {
+		if err := seed.Seed(db); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	return db, nil
+}
+
+// startServer opens, migrates, and serves on addr (use 127.0.0.1:0 for an
+// ephemeral port). It returns the bound address and a stop func.
+func startServer(databaseURL, addr string) (string, func(), error) {
+	return startServerWith(databaseURL, addr, false)
+}
+
+func startServerWith(databaseURL, addr string, withSeed bool) (string, func(), error) {
+	db, err := prepareDB(databaseURL, withSeed)
+	if err != nil {
 		return "", nil, err
 	}
 	ln, err := net.Listen("tcp", addr)
