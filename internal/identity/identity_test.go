@@ -88,6 +88,19 @@ func TestParseServiceAccount(t *testing.T) {
 	}
 }
 
+func TestParseInvalid(t *testing.T) {
+	for name, header := range map[string]string{
+		"not base64":       "!!!",
+		"not json":         base64.StdEncoding.EncodeToString([]byte("hello")),
+		"missing org":      mint(t, "", "someone", false),
+		"missing username": mint(t, "100001", "", false),
+	} {
+		if _, err := Parse(header); err == nil {
+			t.Errorf("%s: Parse succeeded, want error (handler maps to 401)", name)
+		}
+	}
+}
+
 func TestParseRegularUser(t *testing.T) {
 	h := mint(t, "100001", "Test_User", false)
 	got, err := Parse(h)
