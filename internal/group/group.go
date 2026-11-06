@@ -2,6 +2,7 @@ package group
 
 import (
 	"rbac-go/internal/principal"
+	"rbac-go/internal/role"
 	"rbac-go/internal/store"
 )
 
@@ -59,6 +60,44 @@ func List(db *store.DB, orgID string, includeDefaults bool, limit, offset int) (
 		items = append(items, g)
 	}
 	return items, count, rows.Err()
+}
+
+// Roles returns the distinct roles granted to a group through its policies.
+func Roles(db *store.DB, orgID, groupUUID string, limit, offset int) (items []role.Role, total int, err error) {
+	var groupID int64
+	err = db.QueryRow(`SELECT g.id FROM groups g
+		JOIN tenants t ON t.id = g.tenant_id
+		WHERE g.uuid = ? AND t.org_id = ?`, groupUUID, orgID).Scan(&groupID)
+	if err != nil {
+		return nil, 0, err
+	}
+	countQ := `SELECT COUNT(DISTINCT r.id) FROM roles r
+		JOIN policy_roles pr ON pr.role_id = r.id
+		JOIN policies pol ON pol.id = pr.policy_id
+		WHERE pol.group_id = ?`
+	if err := db.QueryRow(countQ, groupID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := db.Query(`SELECT DISTINCT r.uuid, r.name, r.display_name, r.system
+		FROM roles r
+		JOIN policy_roles pr ON pr.role_id = r.id
+		JOIN policies pol ON pol.id = pr.policy_id
+		WHERE pol.group_id = ? ORDER BY r.name LIMIT ? OFFSET ?`, groupID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items = []role.Role{}
+	for rows.Next() {
+		var r role.Role
+		var system int
+		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &system); err != nil {
+			return nil, 0, err
+		}
+		r.System = system != 0
+		items = append(items, r)
+	}
+	return items, total, rows.Err()
 }
 
 // Members returns the principals of a group (members tab).
