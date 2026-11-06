@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -68,6 +69,7 @@ func seedAccess(t *testing.T, db *store.DB) {
 	exec(`INSERT INTO policy_roles(policy_id, role_id) VALUES(
 		(SELECT id FROM policies WHERE uuid='pol-a'),
 		(SELECT id FROM roles WHERE uuid='r-a'))`)
+	seedPermissions(t, db)
 }
 
 func testServerSeeded(t *testing.T) (*Server, string) {
@@ -338,5 +340,76 @@ func TestPrincipalsList(t *testing.T) {
 	}
 	if body.Data[0].Username != "test_user" || body.Data[0].Email == "" {
 		t.Errorf("data[0] = %+v, want test_user with email", body.Data[0])
+	}
+}
+
+// seedPermissions adds cost-management permissions (one scoped, one global)
+// next to the fixture's app:*:*.
+func seedPermissions(t *testing.T, db interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}) {
+	t.Helper()
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
+		VALUES('cost-management','aws.account','read','cost-management:aws.account:read',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
+		VALUES('cost-management','*','*','cost-management:*:*',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+}
+
+// TestPermissionsList mirrors the wizard Step 2 query: allowed_only restricts
+// to ROLE_CREATE_ALLOW_LIST, exclude_globals drops *-permissions.
+func TestPermissionsList(t *testing.T) {
+	s, header := testServerSeeded(t)
+	t.Setenv("ROLE_CREATE_ALLOW_LIST", "cost-management")
+	req := httptest.NewRequest(
+		http.MethodGet, "/api/rbac/v1/permissions/?allowed_only=true&exclude_globals=true&limit=20", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			Permission string `json:"permission"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Data) != 1 || body.Data[0].Permission != "cost-management:aws.account:read" {
+		t.Errorf("data = %+v, want [cost-management:aws.account:read]", body.Data)
+	}
+}
+
+// TestPermissionsOptions mirrors the application dropdown query.
+func TestPermissionsOptions(t *testing.T) {
+	s, header := testServerSeeded(t)
+	t.Setenv("ROLE_CREATE_ALLOW_LIST", "cost-management")
+	req := httptest.NewRequest(
+		http.MethodGet, "/api/rbac/v1/permissions/options/?field=application&allowed_only=true", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data []string `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Data) != 1 || body.Data[0] != "cost-management" {
+		t.Errorf("data = %v, want [cost-management]", body.Data)
 	}
 }
