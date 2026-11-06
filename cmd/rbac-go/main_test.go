@@ -191,3 +191,29 @@ func TestPrepareDBSeeds(t *testing.T) {
 		t.Errorf("Cost Administrator rows = %d, err = %v; want 1", n, err)
 	}
 }
+
+// TestSyncEnvFallback mirrors the operator CronJob: static bits come from
+// env (KEYCLOAK_*, SYNC_*) with flags overriding, so the same env block
+// serves both backends.
+func TestSyncEnvFallback(t *testing.T) {
+	dsn := "sqlite://" + filepath.Join(t.TempDir(), "rbac.db")
+	for _, args := range [][]string{{"migrate"}, {"seed"}, {"bootstrap", "--org", "100001", "--users", "alice"}} {
+		if err := run(args, dsn); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	srv := stubKeycloak(t, []string{"alice", "bob"})
+	defer srv.Close()
+	t.Setenv("KEYCLOAK_URL", srv.URL)
+	t.Setenv("KEYCLOAK_REALM", "onprem")
+	t.Setenv("KEYCLOAK_CLIENT_ID", "rbac-keycloak-sync")
+	t.Setenv("KEYCLOAK_CLIENT_SECRET", "s3cret")
+	t.Setenv("SYNC_ORG_GROUP_PREFIX", "org-")
+	if err := run([]string{"sync", "--org", "100001", "--group", "CI Test Admin", "--prune-orphans=false"}, dsn); err != nil {
+		t.Fatalf("sync via env: %v", err)
+	}
+	got := principals(t, dsn, "100001")
+	if !got["alice"] || !got["bob"] {
+		t.Errorf("principals = %v, want alice and bob", got)
+	}
+}
