@@ -9,27 +9,67 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"rbac-go/internal/access"
 	"rbac-go/internal/identity"
 )
 
 // Server wires the v1 endpoints.
 type Server struct {
-	db  *sql.DB
-	mux *http.ServeMux
+	db       *sql.DB
+	mux      *http.ServeMux
+	requests *prometheus.CounterVec
 }
 
-// New returns the HTTP handler with the v1 routes registered.
+// New returns the HTTP handler with the v1 routes registered. Metrics use a
+// per-Server registry so test servers stay isolated.
 func New(db *sql.DB) *Server {
 	s := &Server{db: db, mux: http.NewServeMux()}
+	s.requests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "rbac_api_requests_total",
+		Help: "Total v1 API requests by endpoint (url_name analogue).",
+	}, []string{"endpoint", "method", "code"})
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(s.requests)
 	s.mux.HandleFunc("GET /api/rbac/v1/status/", s.handleStatus)
 	s.mux.HandleFunc("GET /api/rbac/v1/ready/", s.handleReady)
 	s.mux.HandleFunc("GET /api/rbac/v1/access/", s.handleAccess)
+	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	rec := &codeRecorder{ResponseWriter: w, code: http.StatusOK}
+	s.mux.ServeHTTP(rec, r)
+	s.requests.WithLabelValues(endpointName(r.URL.Path), r.Method, strconv.Itoa(rec.code)).Inc()
+}
+
+type codeRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+func (c *codeRecorder) WriteHeader(code int) {
+	c.code = code
+	c.ResponseWriter.WriteHeader(code)
+}
+
+// endpointName maps a request path to the metric endpoint label (the Django
+// url_name analogue used by dashboards/).
+func endpointName(path string) string {
+	switch {
+	case strings.HasPrefix(path, "/api/rbac/v1/access/"):
+		return "access"
+	case strings.HasPrefix(path, "/api/rbac/v1/status/"):
+		return "status"
+	case strings.HasPrefix(path, "/api/rbac/v1/ready/"):
+		return "ready"
+	case strings.HasPrefix(path, "/metrics/"):
+		return "metrics"
+	default:
+		return "other"
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
