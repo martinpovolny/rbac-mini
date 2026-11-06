@@ -91,3 +91,32 @@ broker. The on-prem beat entry `car-wash-daily` scans an always-empty table.
 - `sources.roles.json`: Sources administrator (`sources:*:*`, admin_default).
 - rbac-go seeds the two admin_default roles; price-list roles are an explicit
   open decision (needed only if on-prem UI delegation uses them).
+
+## 7. On-prem UI (koku-ui/apps/rbac-ui-onprem) API surface
+
+The on-prem RBAC UI is a federated wrapper (`@koku-ui/rbac-ui-onprem`,
+"no upstream repo edits — vendored upstream + on-prem shims") mounting the
+full upstream `Iam` component; with no Kessel on-prem it serves the **v1
+User Access** pages (`/iam/user-access/...`). Evidence:
+`koku-ui/COST-8190-rbac-ui.md` (on-prem CRC failure analysis), shims in
+`apps/rbac-ui-onprem/src/shims/insights-rbac/` (role schema, CostResources,
+ReviewStep, browser 401→/logout, useAppLink).
+
+Confirmed on-prem UI calls (traffic traces + source refs):
+
+- `GET /api/rbac/v1/access/` — permission gating (`useAccessPermissions`).
+- `GET /api/rbac/v1/principals/?limit=&offset=` — Users page (401-loop trace).
+- `GET /api/rbac/v1/groups/…` — Groups pages (list, members, group roles;
+  34 refs in v1+shared).
+- `GET|POST|PUT|PATCH|DELETE /api/rbac/v1/roles/…` — Roles pages + creation
+  wizard (21 refs).
+- `GET /api/rbac/v1/permissions/?allowed_only=true&exclude_globals=true…` +
+  `GET /api/rbac/v1/permissions/options/?field=application&allowed_only=true`
+  — wizard Step 2 (needs `ROLE_CREATE_ALLOW_LIST=cost-management,sources`,
+  fixed in the operator; see `TestRBACEnvRoleCreateAllowList`).
+- Role create payloads carry `resourceDefinitions: []` for global scope
+  (backend-valid; the wizard shim made them optional).
+
+Implication: if the on-prem UI keeps working against rbac-go, the Go scope
+grows beyond `/access/` to v1 principals/groups/roles/permissions
+(list + roles/groups CRUD). Decision recorded separately.
