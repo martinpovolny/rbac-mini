@@ -3,7 +3,6 @@ package access
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"strings"
 )
 
@@ -20,17 +19,17 @@ type Entry struct {
 }
 
 // Query returns the access list for username in orgID filtered to the given
-// applications (exact match). Unknown principal or tenant yields an empty
-// list and no error (koku maps [] to deny).
+// applications (exact match; empty means all applications). Unknown principal
+// or tenant yields an empty list and no error (koku maps [] to deny).
 //
 // Portable SQL only: no DISTINCT ON, no JSON operators, ? placeholders
 // (rebind to $n for Postgres at the call site). attribute_filter is selected
 // as text and decoded in Go.
 func Query(db *sql.DB, orgID, username string, applications []string) ([]Entry, error) {
-	if len(applications) == 0 {
-		return nil, errors.New("at least one application is required")
+	placeholders := ""
+	if len(applications) > 0 {
+		placeholders = " AND p.application IN (" + strings.Repeat("?,", len(applications)-1) + "?)"
 	}
-	placeholders := strings.Repeat("?,", len(applications)-1) + "?"
 	q := `
 SELECT DISTINCT p.permission, rd.attribute_filter
 FROM tenants t
@@ -43,7 +42,7 @@ JOIN roles r ON r.id = prl.role_id
 JOIN access a ON a.role_id = r.id
 JOIN permissions p ON p.id = a.permission_id
 LEFT JOIN resource_definitions rd ON rd.access_id = a.id
-WHERE t.org_id = ? AND pr.username = ? AND p.application IN (` + placeholders + `)
+WHERE t.org_id = ? AND pr.username = ?` + placeholders + `
 ORDER BY p.permission`
 	args := make([]any, 0, len(applications)+2)
 	args = append(args, orgID, strings.ToLower(username))
