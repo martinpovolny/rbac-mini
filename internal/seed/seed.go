@@ -2,10 +2,19 @@ package seed
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"rbac-go/internal/store"
 )
+
+// adminRoles is the on-prem seed set (mirrors the operator
+// rbac_seed/data/*.roles.json admin_default roles koku needs:
+// cost-management for the UI/API, sources for the Integrations tab).
+var adminRoles = []struct{ name, permission string }{
+	{"Cost Administrator", "cost-management:*:*"},
+	{"Sources administrator", "sources:*:*"},
+}
 
 // Seed loads the on-prem role/permission set (mirrors
 // operator/internal/resources/rbac_seed/data/*.json plus
@@ -29,19 +38,33 @@ func Seed(db *store.DB) error {
 		return err
 	}
 
+	for _, role := range adminRoles {
+		if err := seedRole(tx, tenantID, role.name, role.permission); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// seedRole upserts one system role with a single permission grant.
+func seedRole(tx *store.Tx, tenantID int64, name, permission string) error {
+	parts := strings.Split(permission, ":")
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid seed permission %q", permission)
+	}
 	roleID, err := getOrCreate(tx,
-		`SELECT id FROM roles WHERE name='Cost Administrator' AND tenant_id=?`, []any{tenantID},
+		`SELECT id FROM roles WHERE name=? AND tenant_id=?`, []any{name, tenantID},
 		`INSERT INTO roles(uuid, name, display_name, system, tenant_id)
-		 VALUES(?, 'Cost Administrator', 'Cost Administrator', 1, ?)
-		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), tenantID)
+		 VALUES(?, ?, ?, 1, ?)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), name, name, tenantID)
 	if err != nil {
 		return err
 	}
 	permID, err := getOrCreate(tx,
-		`SELECT id FROM permissions WHERE permission='cost-management:*:*'`, nil,
+		`SELECT id FROM permissions WHERE permission=?`, []any{permission},
 		`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
-		 VALUES('cost-management','*','*','cost-management:*:*',?)
-		 ON CONFLICT(permission) DO NOTHING`, tenantID)
+		 VALUES(?,?,?, ?, ?)
+		 ON CONFLICT(permission) DO NOTHING`, parts[0], parts[1], parts[2], permission, tenantID)
 	if err != nil {
 		return err
 	}
@@ -55,7 +78,7 @@ func Seed(db *store.DB) error {
 	} else if err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 // Bootstrap wires an org for on-prem use (mirrors operator
