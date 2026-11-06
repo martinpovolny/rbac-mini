@@ -25,9 +25,36 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Getenv("DATABASE_URL")); err != nil {
+	if err := run(os.Args[1:], resolveDatabaseURL(os.Getenv)); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// resolveDatabaseURL prefers DATABASE_URL, else assembles postgres:// from
+// the operator-injected DATABASE_{HOST,PORT,NAME,USER,PASSWORD} (SPEC §5),
+// else falls back to a local dev SQLite file.
+func resolveDatabaseURL(getenv func(string) string) string {
+	if url := getenv("DATABASE_URL"); url != "" {
+		return url
+	}
+	if host := getenv("DATABASE_HOST"); host != "" {
+		user := getenv("DATABASE_USER")
+		pass := getenv("DATABASE_PASSWORD")
+		port := getenv("DATABASE_PORT")
+		if port == "" {
+			port = "5432"
+		}
+		name := getenv("DATABASE_NAME")
+		auth := user
+		if pass != "" {
+			auth = user + ":" + pass
+		}
+		if auth != "" {
+			auth += "@"
+		}
+		return "postgres://" + auth + host + ":" + port + "/" + name + "?sslmode=disable"
+	}
+	return "sqlite://./rbac.db"
 }
 
 func run(args []string, databaseURL string) error {
