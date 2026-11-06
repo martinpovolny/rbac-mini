@@ -114,3 +114,27 @@ func TestApplyAccessWildcard(t *testing.T) {
 		}
 	}
 }
+
+// TestApplyAccessOCPInheritance mirrors koku _update_access_obj: a principal
+// scoped to one cluster still sees node/project (restricted to *), which is
+// what makes bob's cluster filter return data instead of 403.
+func TestApplyAccessOCPInheritance(t *testing.T) {
+	got := ApplyAccess(map[string][]ACLData{
+		"openshift.cluster": {{Operation: "read", Resources: []any{"e2e-rbac-alpha-x"}}},
+	})
+	if got["openshift.cluster"]["read"][0] != "e2e-rbac-alpha-x" {
+		t.Errorf("cluster.read = %v, want [e2e-rbac-alpha-x]", got["openshift.cluster"]["read"])
+	}
+	for _, res := range []string{"openshift.node", "openshift.project"} {
+		read := got[res]["read"]
+		if len(read) != 1 || read[0] != "*" {
+			t.Errorf("%s.read = %v, want [*] via inheritance", res, read)
+		}
+	}
+	// No inheritance without a cluster grant: empty stays empty.
+	empty := ApplyAccess(map[string][]ACLData{})
+	if len(empty["openshift.node"]["read"]) != 0 || len(empty["openshift.project"]["read"]) != 0 {
+		t.Errorf("node/project without cluster grant = %v / %v, want empty",
+			empty["openshift.node"]["read"], empty["openshift.project"]["read"])
+	}
+}
