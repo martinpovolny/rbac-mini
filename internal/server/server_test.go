@@ -1038,3 +1038,48 @@ func TestGroupRolesAssign(t *testing.T) {
 		t.Errorf("roles after remove = %v, want [roleA]", got)
 	}
 }
+
+// TestRoleAccess: GET /roles/{uuid}/access/ returns the role's grants in the
+// access pagination shape.
+func TestRoleAccess(t *testing.T) {
+	s, header := testServerSeeded(t)
+	uuid := groupUUID(t, s, header, "groupA") // any uuid resolver; roles listed below
+	_ = uuid
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	var list struct {
+		Data []struct {
+			UUID string `json:"uuid"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list.Data) == 0 {
+		t.Fatalf("roles list: %v %+v", err, list)
+	}
+	var roleUUID string
+	for _, r := range list.Data {
+		if r.Name == "roleA" {
+			roleUUID = r.UUID
+		}
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/"+roleUUID+"/access/?limit=20", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			Permission string `json:"permission"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Data) != 1 || body.Data[0].Permission != "app:*:*" {
+		t.Errorf("data = %+v, want [app:*:*]", body.Data)
+	}
+}
