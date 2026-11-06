@@ -11,10 +11,13 @@ changes except where marked TODO.
    `sha256:c333125957c1e688b0efa5322d29d4f5e60ee72092a8d16d67c72633cd161547`,
    pushed 2026-11-06). Operator's `RBACConfig.Image` default becomes
    repository `quay.io/martin_povolny/rbac-go`, tag `v0.1.0`.
-2. **Multi-org Keycloak sync**: the current `sync_keycloak_principals.py`
-   iterates Keycloak groups (`org-` prefix) across orgs. `rbac-go sync` handles
-   one `--org`/`--group` per invocation. Either extend `sync` to loop groups
-   (TODO in rbac-go) or render one CronJob item per org (operator change).
+2. **Multi-org Keycloak sync**: RESOLVED in rbac-go — `sync` without
+   `--org` discovers orgs from Keycloak groups (`--org-group-prefix`,
+   default `org-`, env `SYNC_ORG_GROUP_PREFIX`), reads per-group
+   `org_id`/`account_number` attributes, and syncs members per org exactly
+   like `discover_and_sync`/`sync` (tenant ensure, skip disabled +
+   `service-account-*`, prune, no group touch). Single-org `--org` mode kept
+   for tests/ops.
 3. **Seed parity**: rbac-go seeds `Cost Administrator` + `Sources
    administrator`. The operator seed JSON also defines `Cost Price List
    Administrator/Viewer` etc. Needed only if on-prem UI delegation uses them;
