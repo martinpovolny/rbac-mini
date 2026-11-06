@@ -42,25 +42,6 @@ CREATE TABLE IF NOT EXISTS groups (
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   UNIQUE (name, tenant_id)
 );
-CREATE TABLE IF NOT EXISTS group_principals (
-  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-  principal_id INTEGER NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-  PRIMARY KEY (group_id, principal_id)
-);
-CREATE TABLE IF NOT EXISTS policies (
-  id INTEGER PRIMARY KEY,
-  uuid TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
-  system INTEGER NOT NULL DEFAULT 0,
-  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  UNIQUE (name, tenant_id)
-);
-CREATE TABLE IF NOT EXISTS policy_roles (
-  policy_id INTEGER NOT NULL REFERENCES policies(id) ON DELETE CASCADE,
-  role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-  PRIMARY KEY (policy_id, role_id)
-);
 CREATE TABLE IF NOT EXISTS roles (
   id INTEGER PRIMARY KEY,
   uuid TEXT NOT NULL UNIQUE,
@@ -79,6 +60,25 @@ CREATE TABLE IF NOT EXISTS permissions (
   verb TEXT NOT NULL,
   permission TEXT NOT NULL UNIQUE,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS group_principals (
+  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  principal_id INTEGER NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+  PRIMARY KEY (group_id, principal_id)
+);
+CREATE TABLE IF NOT EXISTS policies (
+  id INTEGER PRIMARY KEY,
+  uuid TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  group_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
+  system INTEGER NOT NULL DEFAULT 0,
+  tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  UNIQUE (name, tenant_id)
+);
+CREATE TABLE IF NOT EXISTS policy_roles (
+  policy_id INTEGER NOT NULL REFERENCES policies(id) ON DELETE CASCADE,
+  role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  PRIMARY KEY (policy_id, role_id)
 );
 CREATE TABLE IF NOT EXISTS access (
   id INTEGER PRIMARY KEY,

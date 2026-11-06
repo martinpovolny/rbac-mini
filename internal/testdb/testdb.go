@@ -38,15 +38,16 @@ func openPostgres(t *testing.T, bootstrapDSN string) *store.DB {
 	if err != nil {
 		t.Fatalf("open postgres: %v", err)
 	}
-	defer admin.Close()
 	var b [4]byte
 	_, _ = rand.Read(b[:])
 	name := fmt.Sprintf("rbac_test_%d_%s", os.Getpid(), hex.EncodeToString(b[:]))
 	if _, err := admin.Exec("CREATE DATABASE " + name); err != nil {
+		admin.Close()
 		t.Fatalf("create database: %v", err)
 	}
 	db, err := store.OpenPostgres(withDB(bootstrapDSN, name))
 	if err != nil {
+		admin.Close()
 		t.Fatalf("open test database: %v", err)
 	}
 	t.Cleanup(func() {
