@@ -1,6 +1,9 @@
 package group
 
 import (
+	"fmt"
+	"strings"
+
 	"rbac-go/internal/principal"
 	"rbac-go/internal/role"
 	"rbac-go/internal/store"
@@ -133,7 +136,51 @@ func Members(db *store.DB, orgID, groupUUID string, limit, offset int) (items []
 	return items, total, rows.Err()
 }
 
-// Get returns one tenant group by uuid.
+// reservedNames mirrors validate_group_name.
+var reservedNames = map[string]bool{"default access": true, "custom default access": true}
+
+// ErrReservedName mirrors the Django reserved-name validation.
+type ErrReservedName struct{ Name string }
+
+func (e ErrReservedName) Error() string {
+	return e.Name + " is reserved, please use another name."
+}
+
+// ErrDuplicate is returned when the name is taken in the tenant.
+type ErrDuplicate struct{ Name string }
+
+func (e ErrDuplicate) Error() string {
+	return "group " + e.Name + " already exists"
+}
+
+// Create inserts a tenant group (no policy until roles are assigned).
+func Create(db *store.DB, orgID, name, description string) (Group, error) {
+	if name == "" {
+		return Group{}, fmt.Errorf("name is required")
+	}
+	if len(name) > 150 {
+		return Group{}, fmt.Errorf("name is too long (max 150)")
+	}
+	if reservedNames[strings.ToLower(name)] {
+		return Group{}, ErrReservedName{Name: name}
+	}
+	uuid := store.NewUUID()
+	_, err := db.Exec(`INSERT INTO groups(uuid, name, description, tenant_id)
+		VALUES(?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
+		uuid, name, description, orgID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Group{}, ErrDuplicate{Name: name}
+		}
+		return Group{}, err
+	}
+	return Get(db, orgID, uuid)
+}
+
+func isUniqueViolation(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "duplicate key value")
+}
 func Get(db *store.DB, orgID, uuid string) (Group, error) {
 	var g Group
 	var desc string

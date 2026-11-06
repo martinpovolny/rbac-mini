@@ -52,6 +52,7 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("DELETE /api/rbac/v1/roles/{uuid}/", s.handleRoleDelete)
 	s.mux.HandleFunc("GET /api/rbac/v1/roles/{uuid}/", s.handleRoleDetail)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/", s.handleGroupsList)
+	s.mux.HandleFunc("POST /api/rbac/v1/groups/", s.handleGroupCreate)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/", s.handleGroupDetail)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipals)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/roles/", s.handleGroupRoles)
@@ -742,6 +743,40 @@ func (s *Server) handleGroupDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, g)
+}
+
+// handleGroupCreate serves POST /api/rbac/v1/groups/.
+func (s *Server) handleGroupCreate(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := ensureTenant(s.db, user.OrgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	created, err := group.Create(s.db, user.OrgID, body.Name, body.Description)
+	if err != nil {
+		var dup group.ErrDuplicate
+		var reserved group.ErrReservedName
+		if errors.As(err, &dup) || errors.As(err, &reserved) ||
+			strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "too long") {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
 }
 
 // handleGroupsList serves GET /api/rbac/v1/groups/.
