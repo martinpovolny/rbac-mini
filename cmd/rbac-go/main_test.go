@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -116,5 +117,29 @@ func TestSyncCommand(t *testing.T) {
 	}
 	if got["stale"] {
 		t.Errorf("principals = %v, want stale pruned", got)
+	}
+}
+
+// TestRunFlagErrors pins the CLI contract: unknown commands, missing required
+// flags and bad backends fail fast with an error instead of serving half
+// configured (operator Job/CronJob would otherwise retry-loop).
+func TestRunFlagErrors(t *testing.T) {
+	dsn := "sqlite://" + filepath.Join(t.TempDir(), "rbac.db")
+	for name, args := range map[string][]string{
+		"unknown command":   {"frobnicate"},
+		"bootstrap no org":  {"bootstrap", "--users", "a"},
+		"sync no url":       {"sync", "--realm", "x", "--org", "y"},
+		"serve bad backend": {"serve", "--addr", "127.0.0.1:0"},
+	} {
+		dbURL := dsn
+		if name == "serve bad backend" {
+			dbURL = "bogus://nope"
+		}
+		if err := run(args, dbURL); err == nil {
+			t.Errorf("%s: run succeeded, want error", name)
+		}
+	}
+	if err := run([]string{"serve", "-h"}, dsn); err != flag.ErrHelp {
+		t.Errorf("serve -h: err = %v, want flag.ErrHelp", err)
 	}
 }
