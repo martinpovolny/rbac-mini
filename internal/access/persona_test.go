@@ -90,7 +90,7 @@ func TestPersonas(t *testing.T) {
 	setupPersonas(t, db)
 
 	// Alice sees only the payment namespace.
-	alice, err := Query(db, "100001", "alice", []string{"cost-management"})
+	alice, err := Query(db, "100001", "alice", []string{"cost-management"}, false)
 	if err != nil {
 		t.Fatalf("alice Query: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestPersonas(t *testing.T) {
 	}
 
 	// Bob is limited to cluster-alpha.
-	bob, err := Query(db, "100001", "bob", []string{"cost-management"})
+	bob, err := Query(db, "100001", "bob", []string{"cost-management"}, false)
 	if err != nil {
 		t.Fatalf("bob Query: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestPersonas(t *testing.T) {
 	}
 
 	// Carol has full access.
-	carol, err := Query(db, "100001", "carol", []string{"cost-management"})
+	carol, err := Query(db, "100001", "carol", []string{"cost-management"}, false)
 	if err != nil {
 		t.Fatalf("carol Query: %v", err)
 	}

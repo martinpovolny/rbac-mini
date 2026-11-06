@@ -265,7 +265,7 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries, err := access.Query(s.db, user.OrgID, principal, apps)
+	entries, err := access.Query(s.db, user.OrgID, principal, apps, user.Admin)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "unexpected error")
 		return

@@ -124,7 +124,7 @@ func TestBootstrapGrantsCostAdministrator(t *testing.T) {
 		}
 	}
 
-	got, err := access.Query(db, "100001", "cost-mgmt-operator", []string{"cost-management"})
+	got, err := access.Query(db, "100001", "cost-mgmt-operator", []string{"cost-management"}, false)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}

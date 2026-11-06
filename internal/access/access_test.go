@@ -55,7 +55,7 @@ func TestGetAccessNoAppSupplied(t *testing.T) {
 
 	// No application filter returns everything (openapi: "When no application
 	// is supplied, all permissions for the principal are returned").
-	got, err := Query(db, "100001", "test_user", nil)
+	got, err := Query(db, "100001", "test_user", nil, false)
 	if err != nil {
 		t.Fatalf("Query returned error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestGetAccessUnknownPrincipalEmpty(t *testing.T) {
 		"unknown user":   {"100001", "nobody-unassigned"},
 		"unknown tenant": {"999999", "test_user"},
 	} {
-		got, err := Query(db, pair[0], pair[1], []string{"app"})
+		got, err := Query(db, pair[0], pair[1], []string{"app"}, false)
 		if err != nil {
 			t.Fatalf("%s: Query returned error: %v", name, err)
 		}
@@ -88,7 +88,7 @@ func TestGetAccessSuccess(t *testing.T) {
 	db := testDB(t)
 	seedFixture(t, db)
 
-	got, err := Query(db, "100001", "test_user", []string{"app"})
+	got, err := Query(db, "100001", "test_user", []string{"app"}, false)
 	if err != nil {
 		t.Fatalf("Query returned error: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestGetAccessMultipleApps(t *testing.T) {
 	seedFixture(t, db)
 	addSecondApp(t, db)
 
-	got, err := Query(db, "100001", "test_user", []string{"app", "cost-management"})
+	got, err := Query(db, "100001", "test_user", []string{"app", "cost-management"}, false)
 	if err != nil {
 		t.Fatalf("Query returned error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestGetAccessExactMatchOnly(t *testing.T) {
 	addSecondApp(t, db)
 
 	for _, apps := range [][]string{{"cost"}, {"cost-management:aws"}, {"App"}} {
-		got, err := Query(db, "100001", "test_user", apps)
+		got, err := Query(db, "100001", "test_user", apps, false)
 		if err != nil {
 			t.Fatalf("Query(%v) returned error: %v", apps, err)
 		}
@@ -156,7 +156,7 @@ func TestGetAccessExactMatchOnly(t *testing.T) {
 		}
 	}
 
-	got, err := Query(db, "100001", "test_user", []string{"cost-management"})
+	got, err := Query(db, "100001", "test_user", []string{"cost-management"}, false)
 	if err != nil {
 		t.Fatalf("Query returned error: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestGetAccessIncludesPublicPlatformDefault(t *testing.T) {
 		(SELECT id FROM policies WHERE uuid='pol-pub'),
 		(SELECT id FROM roles WHERE uuid='r-pub'))`)
 
-	got, err := Query(db, "100001", "test_user", []string{"rbac"})
+	got, err := Query(db, "100001", "test_user", []string{"rbac"}, false)
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}

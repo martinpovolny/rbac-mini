@@ -50,7 +50,7 @@ func BenchmarkAccessQuery(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := Query(db, "100001", "user-42", []string{"app"}); err != nil {
+		if _, err := Query(db, "100001", "user-42", []string{"app"}, false); err != nil {
 			b.Fatal(err)
 		}
 	}

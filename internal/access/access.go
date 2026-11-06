@@ -24,21 +24,36 @@ type Entry struct {
 // applications (exact match; empty means all applications). Unknown principal
 // or tenant yields an empty list and no error (koku maps [] to deny).
 //
+// Group scope mirrors Django's querysets: the principal's own tenant groups
+// plus platform_default groups of the tenant AND the public tenant (the
+// "Default access" group that carries baseViewer/IAM-read grants on-prem).
+//
 // Portable SQL only: no DISTINCT ON, no JSON operators, ? placeholders
 // (rebind to $n for Postgres at the call site). attribute_filter is selected
 // as text and decoded in Go.
-func Query(db *store.DB, orgID, username string, applications []string) ([]Entry, error) {
+func Query(db *store.DB, orgID, username string, applications []string, isOrgAdmin bool) ([]Entry, error) {
 	placeholders := ""
 	if len(applications) > 0 {
 		placeholders = " AND p.application IN (" + strings.Repeat("?,", len(applications)-1) + "?)"
+	}
+	adminClause := ""
+	if isOrgAdmin {
+		// Django _filter_admin_default: org admins also see admin_default
+		// groups (tenant + public).
+		adminClause = ` OR (g.admin_default = 1 AND g.tenant_id IN (
+			t.id, (SELECT id FROM tenants WHERE tenant_name = 'public')))`
 	}
 	q := `
 SELECT DISTINCT p.permission, rd.attribute_filter
 FROM tenants t
 JOIN principals pr ON pr.tenant_id = t.id
-JOIN group_principals gp ON gp.principal_id = pr.id
-JOIN groups g ON g.id = gp.group_id AND g.tenant_id = t.id
-JOIN policies pol ON pol.group_id = g.id AND pol.tenant_id = t.id
+LEFT JOIN group_principals gp ON gp.principal_id = pr.id
+JOIN groups g ON (
+	g.id = gp.group_id AND g.tenant_id = t.id
+	OR (g.platform_default = 1 AND g.admin_default = 0 AND g.tenant_id IN (
+		t.id, (SELECT id FROM tenants WHERE tenant_name = 'public')))` + adminClause + `
+)
+JOIN policies pol ON pol.group_id = g.id
 JOIN policy_roles prl ON prl.policy_id = pol.id
 JOIN roles r ON r.id = prl.role_id
 JOIN access a ON a.role_id = r.id
