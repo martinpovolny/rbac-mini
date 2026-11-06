@@ -197,3 +197,38 @@ decision beyond the access-list query, no cross-account flows.
 5. Helm `test_external_valkey.py` env assertions still pass (envs present).
 6. p99 `<50ms` for `/access/` on seeded dataset without cache (single join query).
 7. `go vet` + `sqlfluff`-style review: `grep -riE "DISTINCT ON|FOR UPDATE|RETURNING|ILIKE|::jsonb|GIN|pgcrypto|ArrayField" rbac-go/` is clean.
+
+## 8. Test Reuse (adapted, not copied verbatim)
+
+Django tests require ORM + Postgres + mocks; Go tests are black-box HTTP +
+SQLite with the same scenarios/fixtures. Sources (parent repo paths):
+
+* `tests/management/access/test_view.py` — fixture graph (`setUp:39-135`:
+  tenant → principal → group → policy → role → access/permission +
+  `resourceDefinitions`) and helpers (`create_role:147`, `create_policy:161`,
+  `create_platform_default_resource:170`, `create_role_and_permission:182`)
+  map 1:1 to the §3 tables. Port as table-driven Go tests:
+  `test_get_access_success:190` (2 records, `meta.limit`, platform-default
+  fallback), `empty_access_with_service_account:228`,
+  `with_service_account:243`, `unique_records:340`, `null_value:384`,
+  `none_value:461`, `no_app:637`, `multiple_apps:679`,
+  `no_partial_match:719`, `no_subset:763`, `no_match:942`, `limit:986`,
+  `pagination:1048`, `invalid_ordering/limit:1096-1107`.
+  Drop: `@patch is_v2_access_check…`, `TenantCache`/`PRINCIPAL_CACHE`,
+  `V2TenantBootstrapService`, `Workspace` bootstrap (`:66-68,83-92`).
+* `tests/identity_request.py` (`_create_request_context`) — reimplement the
+  `x-rh-identity` minting helper in Go (user, org-admin, service-account
+  variants) for all fixture setup.
+* `koku/koku/test_rbac.py:120` + `koku/rbac.py:67-181`
+  (`_normalize/_process_acls`, `links.next` following, `[]` on non-200) —
+  port as `contract_test.go` against `doc/openapi.v1-subset.json`.
+* `operator/test/pytest/suites/e2e/test_rbac_access.py:198-317`
+  (`RBAC_SETUP_SCRIPT`) — alice/bob/carol personas as Go seed-fixture tests.
+* Explicitly not ported: `tests/rbac/test_cache.py` (no Valkey),
+  mocked redis/kafka/kessel/BOP tests, v2/Kessel assertions
+  (`test_access_v2_*:1297-1398`), cross-account (`:527-573`, out of scope).
+
+Layout: `internal/access/access_test.go` (SQLite fixtures mirroring
+`test_view.py:setUp`, one subtest per case above) + `contract_test.go`
+(koku client logic). Both run under `make test-sqlite` and
+`make test-postgres`.
