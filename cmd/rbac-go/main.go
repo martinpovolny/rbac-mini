@@ -138,14 +138,15 @@ func run(args []string, databaseURL string) error {
 		realm := fs.String("realm", os.Getenv("KEYCLOAK_REALM"), "Keycloak realm [$KEYCLOAK_REALM]")
 		clientID := fs.String("client-id", envOr("KEYCLOAK_CLIENT_ID", "rbac-keycloak-sync"), "client id [$KEYCLOAK_CLIENT_ID]")
 		clientSecret := fs.String("client-secret", os.Getenv("KEYCLOAK_CLIENT_SECRET"), "client secret [$KEYCLOAK_CLIENT_SECRET]")
-		org := fs.String("org", os.Getenv("SYNC_ORG_ID"), "org_id [$SYNC_ORG_ID]")
+		org := fs.String("org", os.Getenv("SYNC_ORG_ID"), "org_id: single-org sync [$SYNC_ORG_ID]")
+		orgGroupPrefix := fs.String("org-group-prefix", envOr("SYNC_ORG_GROUP_PREFIX", "org-"), "discover orgs from Keycloak groups with this prefix when --org is empty [$SYNC_ORG_GROUP_PREFIX]")
 		group := fs.String("group", envOr("SYNC_GROUP", "CI Test Admin"), "tenant group for synced users [$SYNC_GROUP]")
 		prune := fs.Bool("prune-orphans", envBool("SYNC_PRUNE_ORPHANS", true), "delete principals gone from Keycloak [$SYNC_PRUNE_ORPHANS]")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		if *keycloakURL == "" || *realm == "" || *org == "" {
-			return fmt.Errorf("sync requires --keycloak-url, --realm and --org (or KEYCLOAK_URL/KEYCLOAK_REALM/SYNC_ORG_ID env)")
+		if *keycloakURL == "" || *realm == "" {
+			return fmt.Errorf("sync requires --keycloak-url and --realm (or KEYCLOAK_URL/KEYCLOAK_REALM env)")
 		}
 		db, err := open()
 		if err != nil {
@@ -155,7 +156,8 @@ func run(args []string, databaseURL string) error {
 		return keycloak.Sync(db, keycloak.Config{
 			BaseURL: *keycloakURL, Realm: *realm,
 			ClientID: *clientID, ClientSecret: *clientSecret,
-			OrgID: *org, Group: *group, PruneOrphans: *prune,
+			OrgID: *org, OrgGroupPrefix: *orgGroupPrefix,
+			Group: *group, PruneOrphans: *prune,
 		})
 	default:
 		return fmt.Errorf("unknown command %q (serve|migrate|seed|bootstrap|sync)", cmd)
