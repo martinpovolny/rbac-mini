@@ -58,6 +58,8 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("DELETE /api/rbac/v1/groups/{uuid}/", s.handleGroupDelete)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipals)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/roles/", s.handleGroupRoles)
+	s.mux.HandleFunc("POST /api/rbac/v1/groups/{uuid}/roles/", s.handleGroupRolesAssign)
+	s.mux.HandleFunc("DELETE /api/rbac/v1/groups/{uuid}/roles/", s.handleGroupRolesRemove)
 	s.mux.HandleFunc("POST /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipalsAdd)
 	s.mux.HandleFunc("DELETE /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipalsRemove)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
@@ -654,6 +656,67 @@ func (s *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleGroupRolesAssign serves POST /api/rbac/v1/groups/{uuid}/roles/.
+func (s *Server) handleGroupRolesAssign(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var body struct {
+		Roles []string `json:"roles"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := group.AssignRoles(s.db, user.OrgID, r.PathValue("uuid"), body.Roles); err != nil {
+		groupRolesWriteError(w, err)
+		return
+	}
+	items, _, err := group.Roles(s.db, user.OrgID, r.PathValue("uuid"), 1000, 0)
+	if err != nil {
+		groupRolesWriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// handleGroupRolesRemove serves DELETE /api/rbac/v1/groups/{uuid}/roles/?roles=.
+func (s *Server) handleGroupRolesRemove(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var uuids []string
+	if raw := strings.TrimSpace(r.URL.Query().Get("roles")); raw != "" {
+		uuids = strings.Split(raw, ",")
+	}
+	if err := group.RemoveRoles(s.db, user.OrgID, r.PathValue("uuid"), uuids); err != nil {
+		groupRolesWriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func groupRolesWriteError(w http.ResponseWriter, err error) {
+	var unknown group.ErrUnknownRole
+	if errors.As(err, &unknown) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if strings.Contains(err.Error(), "cannot be modified") {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err == sql.ErrNoRows {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "unexpected error")
 }
 
 // handleGroupRoles serves GET /api/rbac/v1/groups/{uuid}/roles/.

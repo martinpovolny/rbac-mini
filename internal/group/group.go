@@ -1,6 +1,7 @@
 package group
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -63,6 +64,116 @@ func List(db *store.DB, orgID string, includeDefaults bool, limit, offset int) (
 		items = append(items, g)
 	}
 	return items, count, rows.Err()
+}
+
+// ErrUnknownRole is returned for role UUIDs that do not exist.
+type ErrUnknownRole struct{ UUID string }
+
+func (e ErrUnknownRole) Error() string {
+	return "role " + e.UUID + " not found"
+}
+
+// resolveRoleIDs maps role UUIDs (tenant or public) to ids.
+func resolveRoleIDs(db *store.DB, orgID string, uuids []string) ([]int64, error) {
+	ids := make([]int64, 0, len(uuids))
+	for _, uuid := range uuids {
+		var id int64
+		err := db.QueryRow(`SELECT r.id FROM roles r
+			JOIN tenants t ON t.id = r.tenant_id
+			WHERE r.uuid = ? AND (t.org_id = ? OR t.tenant_name = 'public')`,
+			uuid, orgID).Scan(&id)
+		if err == sql.ErrNoRows {
+			return nil, ErrUnknownRole{UUID: uuid}
+		}
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func ensureGroupPolicy(tx *store.Tx, groupID, tenantID int64, groupName string) (int64, error) {
+	var policyID int64
+	err := tx.QueryRow(`SELECT id FROM policies WHERE group_id = ? LIMIT 1`, groupID).Scan(&policyID)
+	if err == nil {
+		return policyID, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+	if _, err := tx.Exec(`INSERT INTO policies(uuid, name, group_id, tenant_id)
+		VALUES(?, ?, ?, ?) ON CONFLICT(name, tenant_id) DO NOTHING`,
+		store.NewUUID(), groupName+" policy", groupID, tenantID); err != nil {
+		return 0, err
+	}
+	err = tx.QueryRow(`SELECT id FROM policies WHERE group_id = ? LIMIT 1`, groupID).Scan(&policyID)
+	return policyID, err
+}
+
+// AssignRoles grants roles to a group via its policy.
+func AssignRoles(db *store.DB, orgID, groupUUID string, roleUUIDs []string) error {
+	var groupID, tenantID int64
+	var ad int
+	if err := db.QueryRow(`SELECT g.id, g.tenant_id, g.admin_default FROM groups g
+		JOIN tenants t ON t.id = g.tenant_id
+		WHERE g.uuid = ? AND t.org_id = ?`, groupUUID, orgID).Scan(&groupID, &tenantID, &ad); err != nil {
+		return err
+	}
+	if ad != 0 {
+		return fmt.Errorf("Default admin access cannot be modified.")
+	}
+	roleIDs, err := resolveRoleIDs(db, orgID, roleUUIDs)
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	policyID, err := ensureGroupPolicy(tx, groupID, tenantID, groupNameOf(tx, groupID))
+	if err != nil {
+		return err
+	}
+	for _, roleID := range roleIDs {
+		if _, err := tx.Exec(`INSERT INTO policy_roles(policy_id, role_id)
+			VALUES(?, ?) ON CONFLICT(policy_id, role_id) DO NOTHING`, policyID, roleID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func groupNameOf(tx *store.Tx, groupID int64) string {
+	var name string
+	_ = tx.QueryRow(`SELECT name FROM groups WHERE id = ?`, groupID).Scan(&name)
+	return name
+}
+
+// RemoveRoles detaches roles from all of the group's policies.
+func RemoveRoles(db *store.DB, orgID, groupUUID string, roleUUIDs []string) error {
+	var groupID int64
+	var ad int
+	if err := db.QueryRow(`SELECT g.id, g.admin_default FROM groups g
+		JOIN tenants t ON t.id = g.tenant_id
+		WHERE g.uuid = ? AND t.org_id = ?`, groupUUID, orgID).Scan(&groupID, &ad); err != nil {
+		return err
+	}
+	if ad != 0 {
+		return fmt.Errorf("Default admin access cannot be modified.")
+	}
+	roleIDs, err := resolveRoleIDs(db, orgID, roleUUIDs)
+	if err != nil {
+		return err
+	}
+	for _, roleID := range roleIDs {
+		if _, err := db.Exec(`DELETE FROM policy_roles WHERE policy_id IN
+			(SELECT id FROM policies WHERE group_id = ?) AND role_id = ?`, groupID, roleID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Roles returns the distinct roles granted to a group through its policies.
