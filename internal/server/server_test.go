@@ -795,3 +795,36 @@ func TestGroupRoles(t *testing.T) {
 		t.Errorf("roles = %+v, want [roleA]", body.Data)
 	}
 }
+
+// TestCreateGroup: POST /groups/ with a name → 201; duplicates and reserved
+// names ("Default access") are 400 (validate_group_name).
+func TestCreateGroup(t *testing.T) {
+	s, header := testServerSeeded(t)
+	create := func(name string) (int, []byte) {
+		t.Helper()
+		body := `{"name":"` + name + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/rbac/v1/groups/", strings.NewReader(body))
+		req.Header.Set("X-Rh-Identity", header)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.Bytes()
+	}
+	code, respBody := create("team-custom")
+	if code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body: %s)", code, respBody)
+	}
+	var created struct {
+		UUID string `json:"uuid"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(respBody, &created); err != nil || created.UUID == "" || created.Name != "team-custom" {
+		t.Fatalf("created = %+v, err = %v; want uuid + team-custom", created, err)
+	}
+	if code, _ := create("team-custom"); code != http.StatusBadRequest {
+		t.Errorf("duplicate: status = %d, want 400", code)
+	}
+	if code, body := create("Default access"); code != http.StatusBadRequest || !strings.Contains(string(body), "reserved") {
+		t.Errorf("reserved name: status = %d body %s, want 400 + reserved", code, body)
+	}
+}
