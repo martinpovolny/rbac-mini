@@ -26,14 +26,32 @@ Go replacement for `insights-rbac`, scoped to what `../koku` and
 * Identity header auth — decode `x-rh-identity` (base64 JSON), resolve tenant,
   derive `User{username, admin, org_id, client_id, is_service_account}`
   (`rbac/rbac/middleware.py`, `api/models.py:110-152`).
+* On-prem UI (v1 User Access, `koku-ui/apps/rbac-ui-onprem` federated wrapper;
+  see doc/FINDINGS.md §7). The operator runs with
+  `BYPASS_BOP_VERIFICATION=True`, so principals come straight from the DB
+  (fake `foo`/`bar`/`baz` attrs, as in `management/principal/proxy.py:173`):
+  * `GET /api/rbac/v1/principals/?limit=&offset=&usernames=` — Users page
+    (paginated, `meta{count,limit,offset}`).
+  * `GET /api/rbac/v1/roles/` + `POST|GET|PUT|PATCH|DELETE /api/rbac/v1/roles/{uuid}/`
+    (+ `GET .../access/`) — Roles pages + creation wizard. Create validates
+    `application ∈ ROLE_CREATE_ALLOW_LIST`
+    (`management/role/view.py:validate_role`); `resourceDefinitions: []`
+    means global scope and is valid.
+  * `GET /api/rbac/v1/groups/` + membership/role sub-paths used by the UI
+    (list, detail, principals, roles) — Groups pages.
+  * `GET /api/rbac/v1/permissions/?allowed_only=&exclude_globals=` +
+    `GET /api/rbac/v1/permissions/options/?field=application&allowed_only=` —
+    wizard Step 2 (`allowed_only` filters to `ROLE_CREATE_ALLOW_LIST`).
 
 ### Out of scope
 
 * All of v2: `workspaces/, role-bindings/, roles/, principals/` + Kessel/SpiceDB.
-* Rest of v1 CRUD: `groups/, roles/, permissions/, principals/, auditlogs/,`
-  `cross-account-requests/, tenant/opt-in/` — e2e bypasses it via ORM because
-  "RBAC API rejects custom roles for cost-management"
-  (`test_rbac_access.py:507-508`).
+* Rest of v1: `auditlogs/`, `cross-account-requests/`, `tenant/opt-in/`,
+  service-accounts/IT-service paths — not used by koku or the on-prem UI.
+  (Note: e2e bypasses role CRUD via ORM only because the Django API rejects
+  custom roles for cost-management allow-list reasons;
+  `test_rbac_access.py:507-508` — rbac-go implements the validated path
+  directly.)
 * `MCP mcp/`, `_private/*` (~30 utils), `migration_tool`, Kafka/Debezium
   outbox, Celery worker/beat, BOP/IT/UMB/notifications.
 * Valkey/Redis cache. Phase 1 = direct SQL on every request (no cache

@@ -305,3 +305,38 @@ func TestAccessInvalidParams(t *testing.T) {
 		t.Errorf("valid: status = %d, want 200", rec.Code)
 	}
 }
+
+// TestPrincipalsList: Users page. Seeded tenant principals come back
+// paginated (meta{count,limit,offset}) with on-prem placeholder attrs,
+// mirroring BYPASS_BOP_VERIFICATION in management/principal/proxy.py.
+func TestPrincipalsList(t *testing.T) {
+	s, header := testServerSeeded(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/principals/?limit=20", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Meta struct {
+			Count  int `json:"count"`
+			Limit  int `json:"limit"`
+			Offset int `json:"offset"`
+		} `json:"meta"`
+		Data []struct {
+			Username string `json:"username"`
+			Email    string `json:"email"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Meta.Count != 1 || len(body.Data) != 1 {
+		t.Fatalf("count = %d, len(data) = %d, want 1 (test_user)", body.Meta.Count, len(body.Data))
+	}
+	if body.Data[0].Username != "test_user" || body.Data[0].Email == "" {
+		t.Errorf("data[0] = %+v, want test_user with email", body.Data[0])
+	}
+}

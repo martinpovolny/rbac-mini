@@ -137,6 +137,215 @@
           }
         }
       }
+    },
+    "/principals/": {
+      "get": {
+        "tags": [
+          "Principal"
+        ],
+        "summary": "List the principals for a tenant",
+        "description": "By default, responses are sorted in ascending order by username",
+        "operationId": "listPrincipals",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "match_criteria",
+            "required": false,
+            "description": "Parameter for specifying the matching criteria for an object's name and/or email. Currently, match_criteria of partial searches for a username/email using \"starts with\" pattern.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "partial",
+                "exact"
+              ],
+              "default": "exact"
+            }
+          },
+          {
+            "name": "usernames",
+            "in": "query",
+            "description": "Comma separated usernames of principals to get. If match_criteria is specified, only the first username will be picked up for search.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "userA,userB"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "description": "The sort order of the query, either ascending or descending. Defaults to ascending.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "description": "E-mail address of principal to search for. Could be combined with match_criteria for searching.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Set the status of users to get back.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "enabled",
+                "disabled",
+                "all"
+              ],
+              "default": "enabled"
+            }
+          },
+          {
+            "name": "admin_only",
+            "in": "query",
+            "description": "Get only admin users within an account. Setting this would ignore the parameters: usernames, email",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "enum": [
+                true,
+                false
+              ],
+              "default": false
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username. All options work for type of service-account principal, only username works for a user based principal.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "username",
+                "name",
+                "owner",
+                "description",
+                "clientId",
+                "time_created"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "username_only",
+            "required": false,
+            "description": "Parameter for optionally returning only usernames for principals, bypassing a call to IT.",
+            "schema": {
+              "type": "boolean",
+              "enum": [
+                true,
+                false
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Parameter for selecting the type of principal to be returned. Defaults to 'user'.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "service-account",
+                "user",
+                "all"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact name such as: ?type=service-account&name=userA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact owner such as: ?type=service-account&owner=ownerA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "description",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by partial description such as: ?type=service-account&description=desc.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of principals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PrincipalPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list principals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -338,6 +547,204 @@
             }
           }
         }
+      },
+      "Principal": {
+        "required": [
+          "username",
+          "email"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "smithj"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "smithj@mytechco.com"
+          },
+          "first_name": {
+            "type": "string",
+            "example": "John"
+          },
+          "last_name": {
+            "type": "string",
+            "example": "Smith"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "is_org_admin": {
+            "type": "boolean"
+          },
+          "external_source_id": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "example": "1"
+          }
+        }
+      },
+      "PrincipalMinimal": {
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "smithj"
+          }
+        }
+      },
+      "PrincipalPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Principal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrincipalMinimal"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ServiceAccount": {
+        "required": [
+          "clientId",
+          "username",
+          "type"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "service-account-fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "service-account"
+            ]
+          },
+          "clientId": {
+            "type": "string",
+            "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          },
+          "name": {
+            "type": "string",
+            "example": "MyServiceAccount"
+          },
+          "description": {
+            "type": "string",
+            "example": "My new shiny Service Account"
+          },
+          "owner": {
+            "type": "string",
+            "example": "smithj"
+          },
+          "time_created": {
+            "type": "integer",
+            "example": 1706100532
+          }
+        }
+      },
+      "ServiceAccountPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ServiceAccount"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AllPrincipalsPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "serviceAccounts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ServiceAccount"
+                    }
+                  },
+                  "users": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Principal"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "serviceAccounts"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "users"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "serviceAccounts",
+                      "users"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
       }
     },
     "parameters": {
