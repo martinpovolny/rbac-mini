@@ -765,3 +765,33 @@ func TestGroupPrincipals(t *testing.T) {
 		t.Errorf("members = %+v, want [test_user]", body.Data)
 	}
 }
+
+// TestGroupRoles: roles tab of a group (roles granted via its policies).
+func TestGroupRoles(t *testing.T) {
+	s, header := testServerSeeded(t)
+	uuid := groupUUID(t, s, header, "groupA")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+uuid+"/roles/?limit=20", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Meta struct {
+			Count int `json:"count"`
+		} `json:"meta"`
+		Data []struct {
+			UUID string `json:"uuid"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Meta.Count != 1 || len(body.Data) != 1 || body.Data[0].Name != "roleA" {
+		t.Errorf("roles = %+v, want [roleA]", body.Data)
+	}
+}
