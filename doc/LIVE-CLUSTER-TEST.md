@@ -87,8 +87,27 @@ oc -n cost-byoi logs job/keycloak-sync-manual     # principals upserted/pruned
 ```bash
 oc -n cost-byoi patch costmanagementserviceconfig $CR --type=merge \
   -p '{"spec":{"rbac":{"backend":""}}}'
+# Rollback must ALSO restore the image (backend:"" alone keeps the Go image
+# with a gunicorn command → CreateContainerError):
+oc -n cost-byoi patch costmanagementserviceconfig $CR --type=merge \
+  -p '{"spec":{"rbac":{"image":{"repository":"quay.io/martin_povolny/insights-rbac","tag":"crc-arm64"}}}}'
 oc -n cost-byoi rollout status deployment/<cr>-rbac-api
 # Django stack (incl. worker) returns; same costonprem_rbac database.
+
+Verified live 2026-11-06 (both directions). Caveats found while testing:
+
+* Django's `manage.py seeds` (run by the rollback migration Job) **prunes
+  Go-created groups/policies** (e.g. the test `CI Test Admin` group vanished;
+  tenant + principals survive) and re-seeds its own platform roles. After a
+  rollback to Django, **re-run bootstrap** (or the e2e fixtures) to restore
+  custom group wiring. Live symptom: Django `/access/` returned
+  `aws.account:*` + `openshift.cluster:*` (public Default-access viewers)
+  instead of the Go-seeded `cost-management:*:*`.
+* That same test exposed a real Go parity gap (fixed in rbac-go):
+  Django auto-includes the **public** tenant's platform-default groups in
+  every `/access/` call, plus admin_default groups for org admins.
+* Test-only rows (org `99999` tenant `org99999`, principal `testlive`) remain
+  in `costonprem_rbac`; harmless, no cleanup job exists for them.
 ```
 
 ## Notes
