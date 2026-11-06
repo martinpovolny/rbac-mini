@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"rbac-go/internal/store"
@@ -240,6 +241,28 @@ func TestStatus(t *testing.T) {
 	}
 	if body["api_version"] != float64(1) {
 		t.Errorf("api_version = %v, want 1", body["api_version"])
+	}
+}
+
+// TestMetrics: the operator ServiceMonitor scrapes GET /metrics/;
+// it must serve Prometheus exposition including the per-endpoint counter.
+func TestMetrics(t *testing.T) {
+	s := testServer(t)
+	// Generate traffic so the counter has observations.
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/status/", nil)
+	s.ServeHTTP(httptest.NewRecorder(), req)
+
+	req = httptest.NewRequest(http.MethodGet, "/metrics/", nil)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"rbac_api_requests_total", `endpoint="status"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics body missing %q", want)
+		}
 	}
 }
 
