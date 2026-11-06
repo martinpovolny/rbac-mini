@@ -78,3 +78,22 @@ ones in a later release. `waitForRBACDB` initContainer unchanged.
    `rbac-go migrate && rbac-go seed && rbac-go bootstrap --org … --users …`.
 5. ServiceMonitor `/metrics/` target unchanged; `rbac_api_requests_total`
    replaces the Django metric names on dashboards.
+
+## 7. Helm-rendered env contract (verified 2026-11-06)
+
+Rendered `cost-onprem-chart/cost-onprem` with the external-Valkey values
+(`valkey.deploy=false`, auth+TLS on) — 72 manifests, `helm template` exit 0.
+The `rbac-api` Deployment carries envs rbac-go must accept; status:
+
+| Env | Rendered value | rbac-go behavior |
+|---|---|---|
+| `REDIS_HOST/PORT` | external host/port | accepted, ignored (no Valkey client) |
+| `REDIS_PASSWORD/USERNAME` | secretRef | accepted, ignored |
+| `REDIS_SSL/REDIS_SSL_CA_CERTS` | `True` + ca path | accepted, ignored |
+| `DATABASE_HOST/NAME` (+`PORT/USER/PASSWORD`) | cluster DB, `costonprem_rbac` | honored via `resolveDatabaseURL` |
+| `ACCESS_CACHE_ENABLED` | `True` | accepted, treated as false |
+| `DJANGO_SECRET_KEY` | secretRef | accepted, ignored |
+
+Command/args replaced: `gunicorn rbac.wsgi …` → `rbac-go serve --addr :8080`;
+`celery … worker` (rbac-worker) deleted. Probes (`/api/rbac/v1/status/`),
+port `8080/http`, Service, Envoy route all unchanged.
