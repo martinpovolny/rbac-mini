@@ -47,6 +47,20 @@ func TestSeedCostAdministrator(t *testing.T) {
 	if perm != "cost-management:*:*" {
 		t.Errorf("permission = %q, want %q", perm, "cost-management:*:*")
 	}
+	// On-prem koku also queries ?application=sources, which lives in a
+	// different application bucket: the Sources administrator role.
+	var sourcesPerm string
+	err = db.QueryRow(`SELECT p.permission FROM permissions p
+		JOIN access a ON a.permission_id = p.id
+		JOIN roles r ON r.id = a.role_id
+		JOIN tenants t ON t.id = r.tenant_id
+		WHERE r.name = 'Sources administrator' AND t.tenant_name = 'public'`).Scan(&sourcesPerm)
+	if err != nil {
+		t.Fatalf("Sources administrator grant missing: %v", err)
+	}
+	if sourcesPerm != "sources:*:*" {
+		t.Errorf("permission = %q, want %q", sourcesPerm, "sources:*:*")
+	}
 	first := counts(t, db)
 
 	if err := Seed(db); err != nil {
