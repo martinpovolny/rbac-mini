@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"rbac-go/internal/access"
+	"rbac-go/internal/group"
 	"rbac-go/internal/identity"
 	"rbac-go/internal/permission"
 	"rbac-go/internal/principal"
@@ -50,6 +51,8 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("PATCH /api/rbac/v1/roles/{uuid}/", s.handleRolePatch)
 	s.mux.HandleFunc("DELETE /api/rbac/v1/roles/{uuid}/", s.handleRoleDelete)
 	s.mux.HandleFunc("GET /api/rbac/v1/roles/{uuid}/", s.handleRoleDetail)
+	s.mux.HandleFunc("GET /api/rbac/v1/groups/", s.handleGroupsList)
+	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/", s.handleGroupDetail)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
 }
@@ -644,6 +647,64 @@ func (s *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleGroupDetail serves GET /api/rbac/v1/groups/{uuid}/.
+func (s *Server) handleGroupDetail(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	g, err := group.Get(s.db, user.OrgID, r.PathValue("uuid"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
+}
+
+// handleGroupsList serves GET /api/rbac/v1/groups/.
+func (s *Server) handleGroupsList(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := ensureTenant(s.db, user.OrgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	q := r.URL.Query()
+	limit, offset := 10, 0
+	if raw := q.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 1000 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+	}
+	if raw := q.Get("offset"); raw != "" {
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+	}
+	items, total, err := group.List(s.db, user.OrgID, false, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meta": map[string]any{"count": total, "limit": limit, "offset": offset},
+		"links": map[string]any{
+			"first": linkURL(r, 0, limit),
+			"next":  linkURLOrNil(r, offset+limit, limit, offset+limit < total),
+			"last":  linkURL(r, lastOffset(total, limit), limit),
+		},
+		"data": items,
+	})
 }
 
 // handleRoleDetail serves GET /api/rbac/v1/roles/{uuid}/.
