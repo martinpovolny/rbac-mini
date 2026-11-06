@@ -40,5 +40,51 @@ type ACLData struct {
 // legacy cost-management:rate is rewritten to cost_model, malformed
 // permissions are skipped, empty resourceDefinitions mean ["*"].
 func ProcessACLs(entries []access.Entry) map[string][]ACLData {
-	return nil
+	out := map[string][]ACLData{}
+	for _, e := range entries {
+		permission := e.Permission
+		if strings.Contains(permission, "cost-management:rate") {
+			permission = strings.Replace(permission, "rate", "cost_model", 1)
+		}
+		resTyp, operation, err := ExtractPermission(permission)
+		if err != nil {
+			continue
+		}
+		out[resTyp] = append(out[resTyp], ACLData{
+			Operation: operation,
+			Resources: extractResources(e.ResourceDefinitions),
+		})
+	}
+	return out
+}
+
+// extractResources mirrors koku _extract_resource_definitions.
+func extractResources(rds []access.ResourceDefinition) []any {
+	if len(rds) == 0 {
+		return []any{"*"}
+	}
+	var out []any
+	for _, rd := range rds {
+		af := rd.AttributeFilter
+		op, _ := af["operation"].(string)
+		value := af["value"]
+		switch op {
+		case "equal":
+			if value != nil && value != "" {
+				out = append(out, value)
+			}
+		case "in":
+			switch v := value.(type) {
+			case string:
+				if v != "" {
+					for _, s := range strings.Split(v, ",") {
+						out = append(out, s)
+					}
+				}
+			case []any:
+				out = append(out, v...)
+			}
+		}
+	}
+	return out
 }
