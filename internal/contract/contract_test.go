@@ -77,3 +77,40 @@ func TestProcessACLs(t *testing.T) {
 		t.Errorf("bogus key present, want invalid ACLs skipped: %v", got)
 	}
 }
+
+// TestApplyAccessWildcard mirrors koku wildcard handling: a single * ACL
+// with operation * expands to every resource bucket (write where available,
+// else read) and compacts to ["*"].
+func TestApplyAccessWildcard(t *testing.T) {
+	got := ApplyAccess(map[string][]ACLData{
+		"*": {{Operation: "*", Resources: []any{"*"}}},
+	})
+	for _, rt := range []struct {
+		name string
+		ops  []string
+	}{
+		{"aws.account", []string{"read"}},
+		{"aws.organizational_unit", []string{"read"}},
+		{"gcp.account", []string{"read"}},
+		{"gcp.project", []string{"read"}},
+		{"azure.subscription_guid", []string{"read"}},
+		{"openshift.cluster", []string{"read"}},
+		{"openshift.node", []string{"read"}},
+		{"openshift.project", []string{"read"}},
+		{"cost_model", []string{"read", "write"}},
+		{"settings", []string{"read", "write"}},
+		{"sources", []string{"read", "write"}},
+	} {
+		bucket, ok := got[rt.name]
+		if !ok {
+			t.Errorf("missing bucket %q", rt.name)
+			continue
+		}
+		for _, op := range rt.ops {
+			res, ok := bucket[op]
+			if !ok || len(res) != 1 || res[0] != "*" {
+				t.Errorf("%s.%s = %v, want [*]", rt.name, op, bucket[op])
+			}
+		}
+	}
+}

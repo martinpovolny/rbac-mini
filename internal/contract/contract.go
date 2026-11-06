@@ -58,6 +58,19 @@ func ProcessACLs(entries []access.Entry) map[string][]ACLData {
 	return out
 }
 
+// ResourceType mirrors koku RESOURCE_TYPES (on-prem list, sources included).
+type ResourceType struct {
+	Name       string
+	Operations []string
+}
+
+// ApplyAccess folds grouped capabilities into the per-resource access map
+// koku enforces (koku _apply_access): wildcard expansion, OCP inheritance,
+// "*" compaction.
+func ApplyAccess(access map[string][]ACLData) map[string]map[string][]any {
+	return nil
+}
+
 // extractResources mirrors koku _extract_resource_definitions.
 func extractResources(rds []access.ResourceDefinition) []any {
 	if len(rds) == 0 {
