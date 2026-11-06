@@ -419,7 +419,7 @@ func TestPermissionsOptions(t *testing.T) {
 func TestCreateRole(t *testing.T) {
 	s, header := testServerSeeded(t)
 	t.Setenv("ROLE_CREATE_ALLOW_LIST", "cost-management")
-	body := `{"name":"roleA","access":[{"permission":"cost-management:aws.account:read","resourceDefinitions":[]}]}`
+	body := `{"name":"roleWizard","access":[{"permission":"cost-management:aws.account:read","resourceDefinitions":[]}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/rbac/v1/roles/", strings.NewReader(body))
 	req.Header.Set("X-Rh-Identity", header)
 	req.Header.Set("Content-Type", "application/json")
@@ -436,8 +436,8 @@ func TestCreateRole(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if created.UUID == "" || created.Name != "roleA" {
-		t.Errorf("created = %+v, want uuid + name roleA", created)
+	if created.UUID == "" || created.Name != "roleWizard" {
+		t.Errorf("created = %+v, want uuid + name roleWizard", created)
 	}
 
 	// The grant is visible on detail.

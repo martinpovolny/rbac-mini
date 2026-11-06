@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS roles (
   uuid TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   display_name TEXT NOT NULL DEFAULT '',
+  description TEXT,
   system INTEGER NOT NULL DEFAULT 0,
   platform_default INTEGER NOT NULL DEFAULT 0,
   admin_default INTEGER NOT NULL DEFAULT 0,
@@ -218,5 +219,9 @@ func Migrate(db *DB) error {
 			return err
 		}
 	}
+	// Backfill columns added after the initial schema for databases created
+	// before them (CREATE TABLE IF NOT EXISTS never alters). Errors are
+	// ignored: the only expected failure is "column already exists".
+	_, _ = db.Exec(`ALTER TABLE roles ADD COLUMN description TEXT`)
 	return nil
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"rbac-go/internal/identity"
 	"rbac-go/internal/permission"
 	"rbac-go/internal/principal"
+	"rbac-go/internal/role"
 	"rbac-go/internal/store"
 )
 
@@ -41,6 +43,8 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("GET /api/rbac/v1/principals/", s.handlePrincipals)
 	s.mux.HandleFunc("GET /api/rbac/v1/permissions/", s.handlePermissions)
 	s.mux.HandleFunc("GET /api/rbac/v1/permissions/options/", s.handlePermissionOptions)
+	s.mux.HandleFunc("POST /api/rbac/v1/roles/", s.handleRoleCreate)
+	s.mux.HandleFunc("GET /api/rbac/v1/roles/{uuid}/", s.handleRoleDetail)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
 }
@@ -415,6 +419,68 @@ func (s *Server) handlePermissionOptions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": values})
+}
+
+// handleRoleCreate serves POST /api/rbac/v1/roles/ (wizard Step 4).
+func (s *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := ensureTenant(s.db, user.OrgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	var body struct {
+		Name        string `json:"name"`
+		DisplayName string `json:"display_name"`
+		Description string `json:"description"`
+		Access      []struct {
+			Permission          string                      `json:"permission"`
+			ResourceDefinitions []access.ResourceDefinition `json:"resourceDefinitions"`
+		} `json:"access"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	grants := make([]role.AccessIn, 0, len(body.Access))
+	for _, a := range body.Access {
+		grants = append(grants, role.AccessIn{Permission: a.Permission, ResourceDefinitions: a.ResourceDefinitions})
+	}
+	created, err := role.Create(s.db, user.OrgID, body.Name, body.DisplayName, body.Description,
+		grants, strings.Split(os.Getenv("ROLE_CREATE_ALLOW_LIST"), ","))
+	if err != nil {
+		var notAllowed *role.ErrAppNotAllowed
+		var unknown *role.ErrUnknownPermission
+		if errors.As(err, &notAllowed) || errors.As(err, &unknown) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "required") {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+// handleRoleDetail serves GET /api/rbac/v1/roles/{uuid}/.
+func (s *Server) handleRoleDetail(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	role, err := role.Get(s.db, user.OrgID, r.PathValue("uuid"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, role)
 }
 
 func parts(permission string) [3]string {
