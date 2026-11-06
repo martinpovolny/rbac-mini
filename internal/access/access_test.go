@@ -204,3 +204,57 @@ func TestGetAccessIncludesPublicPlatformDefault(t *testing.T) {
 		t.Errorf("got = %+v, want [rbac:principal:read] via public Default access", got)
 	}
 }
+
+// TestGetAccessIncludesAdminDefaultForOrgAdmin mirrors Django's
+// _filter_admin_default: org admins additionally see admin_default groups
+// (tenant + public); non-admins only see ones they belong to.
+func TestGetAccessIncludesAdminDefaultForOrgAdmin(t *testing.T) {
+	db := testDB(t)
+	seedFixture(t, db)
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
+		VALUES('cost-management','settings','read','cost-management:settings:read',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO roles(uuid, name, admin_default, tenant_id) VALUES('r-ad','Admin Default',1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO access(role_id, permission_id, tenant_id) VALUES(
+		(SELECT id FROM roles WHERE uuid='r-ad'),
+		(SELECT id FROM permissions WHERE permission='cost-management:settings:read'),
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO groups(uuid, name, admin_default, tenant_id) VALUES('g-ad','Admins',1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO policies(uuid, name, group_id, tenant_id) VALUES('pol-ad','Admins Policy',
+		(SELECT id FROM groups WHERE uuid='g-ad'),
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO policy_roles(policy_id, role_id) VALUES(
+		(SELECT id FROM policies WHERE uuid='pol-ad'),
+		(SELECT id FROM roles WHERE uuid='r-ad'))`)
+
+	if got, err := Query(db, "100001", "test_user", []string{"cost-management"}, false); err != nil {
+		t.Fatal(err)
+	} else {
+		for _, e := range got {
+			if e.Permission == "cost-management:settings:read" {
+				t.Errorf("non-admin sees admin_default grant: %+v", got)
+			}
+		}
+	}
+	got, err := Query(db, "100001", "test_user", []string{"cost-management"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range got {
+		if e.Permission == "cost-management:settings:read" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("org admin missing admin_default grant: %+v", got)
+	}
+}
