@@ -7,7 +7,8 @@ changes except where marked TODO.
 ## 0. Open decisions
 
 1. **Image registry + tag**: RESOLVED — `quay.io/martin_povolny/rbac-go:v0.1.0`
-   (`sha256:6604e5275978585e65fdd394f0879c4ec53b49b7f79693f83119623b39562514`,
+   (multi-arch `linux/amd64`+`linux/arm64` index
+   `sha256:c333125957c1e688b0efa5322d29d4f5e60ee72092a8d16d67c72633cd161547`,
    pushed 2026-11-06). Operator's `RBACConfig.Image` default becomes
    repository `quay.io/martin_povolny/rbac-go`, tag `v0.1.0`.
 2. **Multi-org Keycloak sync**: the current `sync_keycloak_principals.py`
