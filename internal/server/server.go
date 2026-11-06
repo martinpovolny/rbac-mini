@@ -23,6 +23,7 @@ type Server struct {
 func New(db *sql.DB) *Server {
 	s := &Server{db: db, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /api/rbac/v1/status/", s.handleStatus)
+	s.mux.HandleFunc("GET /api/rbac/v1/ready/", s.handleReady)
 	s.mux.HandleFunc("GET /api/rbac/v1/access/", s.handleAccess)
 	return s
 }
@@ -40,6 +41,15 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 // handleStatus is the operator probe target (see SPEC §2).
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"api_version": 1})
+}
+
+// handleReady pings the SQL DB: 200 when reachable, 503 otherwise.
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	if err := s.db.Ping(); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "database unreachable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ready": true})
 }
 
 func writeError(w http.ResponseWriter, code int, detail string) {
