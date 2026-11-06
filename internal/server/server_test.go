@@ -474,3 +474,40 @@ func TestCreateRoleValidation(t *testing.T) {
 		}
 	}
 }
+
+// TestRolesList: GET /roles/ returns the tenant's roles paginated.
+func TestRolesList(t *testing.T) {
+	s, header := testServerSeeded(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/?limit=20", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Meta struct {
+			Count int `json:"count"`
+		} `json:"meta"`
+		Data []struct {
+			UUID string `json:"uuid"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Meta.Count < 1 || len(body.Data) < 1 {
+		t.Fatalf("count = %d, len(data) = %d, want >= 1 (fixture roleA)", body.Meta.Count, len(body.Data))
+	}
+	found := false
+	for _, r := range body.Data {
+		if r.Name == "roleA" && r.UUID != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("data = %+v, want fixture roleA with uuid", body.Data)
+	}
+}
