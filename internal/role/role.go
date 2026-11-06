@@ -140,6 +140,45 @@ func Create(db *store.DB, orgID, name, displayName, description string, grants [
 	return Role{UUID: uuid, Name: name, DisplayName: displayName, Description: description}, nil
 }
 
+// List returns tenant (+public platform) roles ordered by name.
+func List(db *store.DB, orgID, nameFilter string, limit, offset int) (items []Role, total int, err error) {
+	where := ` (t.org_id = ? OR t.tenant_name = 'public')`
+	args := []any{orgID}
+	if nameFilter != "" {
+		where += ` AND LOWER(r.name) LIKE '%' || LOWER(?) || '%'`
+		args = append(args, nameFilter)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM roles r
+		JOIN tenants t ON t.id = r.tenant_id WHERE`+where, args...).Scan(&count); err != nil {
+		return nil, 0, err
+	}
+	q := `SELECT r.uuid, r.name, r.display_name, COALESCE(r.description,''), r.system
+		FROM roles r JOIN tenants t ON t.id = r.tenant_id
+		WHERE` + where + ` ORDER BY r.name LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items = []Role{}
+	for rows.Next() {
+		var r Role
+		var system int
+		var desc string
+		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &desc, &system); err != nil {
+			return nil, 0, err
+		}
+		if desc != "" {
+			r.Description = desc
+		}
+		r.System = system != 0
+		items = append(items, r)
+	}
+	return items, count, rows.Err()
+}
+
 // Get returns a role with its access grants, tenant- or public-scoped.
 func Get(db *store.DB, orgID, uuid string) (Role, error) {
 	var r Role

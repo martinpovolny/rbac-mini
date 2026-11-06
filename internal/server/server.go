@@ -44,6 +44,7 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("GET /api/rbac/v1/permissions/", s.handlePermissions)
 	s.mux.HandleFunc("GET /api/rbac/v1/permissions/options/", s.handlePermissionOptions)
 	s.mux.HandleFunc("POST /api/rbac/v1/roles/", s.handleRoleCreate)
+	s.mux.HandleFunc("GET /api/rbac/v1/roles/", s.handleRolesList)
 	s.mux.HandleFunc("GET /api/rbac/v1/roles/{uuid}/", s.handleRoleDetail)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
@@ -466,6 +467,72 @@ func (s *Server) handleRoleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// linkURL builds a same-path pagination link preserving the query string.
+func linkURL(r *http.Request, off, limit int) *string {
+	v, _ := url.ParseQuery(r.URL.RawQuery)
+	v.Set("offset", strconv.Itoa(off))
+	v.Set("limit", strconv.Itoa(limit))
+	s := r.URL.Path + "?" + v.Encode()
+	return &s
+}
+
+func linkURLOrNil(r *http.Request, off, limit int, present bool) *string {
+	if !present {
+		return nil
+	}
+	return linkURL(r, off, limit)
+}
+
+func lastOffset(total, limit int) int {
+	if total == 0 {
+		return 0
+	}
+	return (total - 1) / limit * limit
+}
+
+// handleRolesList serves GET /api/rbac/v1/roles/.
+func (s *Server) handleRolesList(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := ensureTenant(s.db, user.OrgID); err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	q := r.URL.Query()
+	limit, offset := 10, 0
+	if raw := q.Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 1000 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+	}
+	if raw := q.Get("offset"); raw != "" {
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			writeError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+	}
+	items, total, err := role.List(s.db, user.OrgID, q.Get("name"), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meta": map[string]any{"count": total, "limit": limit, "offset": offset},
+		"links": map[string]any{
+			"first": linkURL(r, 0, limit),
+			"next":  linkURLOrNil(r, offset+limit, limit, offset+limit < total),
+			"last":  linkURL(r, lastOffset(total, limit), limit),
+		},
+		"data": items,
+	})
 }
 
 // handleRoleDetail serves GET /api/rbac/v1/roles/{uuid}/.
