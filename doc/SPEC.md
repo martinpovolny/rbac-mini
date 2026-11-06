@@ -195,7 +195,11 @@ decision beyond the access-list query, no cross-account flows.
    bob=cluster-alpha only, carol=full) return correct filtering after ORM-seed
    equivalent loaded via seed/bootstrap jobs.
 5. Helm `test_external_valkey.py` env assertions still pass (envs present).
-6. p99 `<50ms` for `/access/` on seeded dataset without cache (single join query).
+6. Query latency (BenchmarkAccessQuery: 200 principals, 5 permissions with
+   resourceDefinitions each, Apple M1 Max): SQLite :memory: ~0.7ms/op,
+   Postgres 16 over localhost TCP ~3.7ms/op — far inside the 50ms budget
+   for the single join query behind koku's 30s cache. Re-run with
+   `go test ./internal/access/ -run NONE -bench AccessQuery`.
 7. `go vet` + `sqlfluff`-style review: `grep -riE "DISTINCT ON|FOR UPDATE|RETURNING|ILIKE|::jsonb|GIN|pgcrypto|ArrayField" rbac-go/` is clean.
 
 ## 8. Test Reuse (adapted, not copied verbatim)

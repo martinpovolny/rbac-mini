@@ -11,12 +11,20 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"testing"
 
 	"rbac-go/internal/store"
 )
 
-func Open(t *testing.T) *store.DB {
+// T is the subset of testing.T/B used here, so benchmarks can reuse Open.
+type T interface {
+	Helper()
+	Fatal(args ...any)
+	Fatalf(format string, args ...any)
+	Logf(format string, args ...any)
+	Cleanup(func())
+}
+
+func Open(t T) *store.DB {
 	t.Helper()
 	if dsn := os.Getenv("RBAC_TEST_POSTGRES"); dsn != "" {
 		return openPostgres(t, dsn)
@@ -32,7 +40,7 @@ func Open(t *testing.T) *store.DB {
 	return db
 }
 
-func openPostgres(t *testing.T, bootstrapDSN string) *store.DB {
+func openPostgres(t T, bootstrapDSN string) *store.DB {
 	t.Helper()
 	admin, err := store.OpenPostgres(bootstrapDSN)
 	if err != nil {
