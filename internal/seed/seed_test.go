@@ -1,27 +1,19 @@
 package seed
 
 import (
-	"database/sql"
 	"testing"
 
 	"rbac-go/internal/access"
 	"rbac-go/internal/store"
+	"rbac-go/internal/testdb"
 )
 
-func testDB(t *testing.T) *sql.DB {
+func testDB(t *testing.T) *store.DB {
 	t.Helper()
-	db, err := store.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
+	return testdb.Open(t)
 }
 
-func counts(t *testing.T, db *sql.DB) map[string]int {
+func counts(t *testing.T, db *store.DB) map[string]int {
 	t.Helper()
 	out := map[string]int{}
 	for _, table := range []string{"tenants", "roles", "permissions", "access", "resource_definitions"} {

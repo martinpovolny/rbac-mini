@@ -1,10 +1,10 @@
 package access
 
 import (
-	"database/sql"
 	"testing"
 
 	"rbac-go/internal/store"
+	"rbac-go/internal/testdb"
 )
 
 // setupPersonas mirrors operator
@@ -12,7 +12,7 @@ import (
 // (Payment Namespace Viewer, Cluster Alpha Viewer, Cost Administrator) bound
 // to alice/bob/carol via tenant groups. RBAC's job is to return the right
 // resourceDefinitions per principal; koku enforces them on reports.
-func setupPersonas(t *testing.T, db *sql.DB) {
+func setupPersonas(t *testing.T, db *store.DB) {
 	t.Helper()
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -86,14 +86,7 @@ func findEntry(entries []Entry, perm string) *Entry {
 }
 
 func TestPersonas(t *testing.T) {
-	db, err := store.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := testdb.Open(t)
 	setupPersonas(t, db)
 
 	// Alice sees only the payment namespace.

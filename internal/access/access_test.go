@@ -1,16 +1,16 @@
 package access
 
 import (
-	"database/sql"
 	"testing"
 
 	"rbac-go/internal/store"
+	"rbac-go/internal/testdb"
 )
 
 // seedFixture mirrors tests/management/access/test_view.py: access_data +
 // principal/group/policy/role wiring: test_user in groupA, roleA grants
 // app:*:* with one equal resourceDefinition.
-func seedFixture(t *testing.T, db *sql.DB) {
+func seedFixture(t *testing.T, db *store.DB) {
 	t.Helper()
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -44,17 +44,9 @@ func seedFixture(t *testing.T, db *sql.DB) {
 		(SELECT id FROM roles WHERE uuid='r-a'))`)
 }
 
-func testDB(t *testing.T) *sql.DB {
+func testDB(t *testing.T) *store.DB {
 	t.Helper()
-	db, err := store.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return db
+	return testdb.Open(t)
 }
 
 func TestGetAccessNoAppSupplied(t *testing.T) {
@@ -116,7 +108,7 @@ func TestGetAccessSuccess(t *testing.T) {
 }
 
 // addSecondApp grants roleA a cost-management permission alongside app:*:*.
-func addSecondApp(t *testing.T, db *sql.DB) {
+func addSecondApp(t *testing.T, db *store.DB) {
 	t.Helper()
 	if _, err := db.Exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
 		VALUES('cost-management','aws.account','read','cost-management:aws.account:read',

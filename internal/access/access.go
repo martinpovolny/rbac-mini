@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"strings"
+
+	"rbac-go/internal/store"
 )
 
 // ResourceDefinition mirrors the v1 API shape:
@@ -25,7 +27,7 @@ type Entry struct {
 // Portable SQL only: no DISTINCT ON, no JSON operators, ? placeholders
 // (rebind to $n for Postgres at the call site). attribute_filter is selected
 // as text and decoded in Go.
-func Query(db *sql.DB, orgID, username string, applications []string) ([]Entry, error) {
+func Query(db *store.DB, orgID, username string, applications []string) ([]Entry, error) {
 	placeholders := ""
 	if len(applications) > 0 {
 		placeholders = " AND p.application IN (" + strings.Repeat("?,", len(applications)-1) + "?)"

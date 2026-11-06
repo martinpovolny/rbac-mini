@@ -5,12 +5,11 @@
 //	rbac-go seed                            migrate + load Cost Administrator set
 //	rbac-go bootstrap --org --account --users a,b,c
 //
-// DATABASE_URL selects the backend: sqlite:///path/to.db (dev/test) or
-// sqlite://:memory:. Postgres (postgres://...) is the next cycle.
+// DATABASE_URL selects the backend: sqlite:///path/to.db (dev/test),
+// sqlite://:memory:, or postgres://... (prod/operator).
 package main
 
 import (
-	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -36,7 +35,7 @@ func run(args []string, databaseURL string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, rest = args[0], args[1:]
 	}
-	open := func() (*sql.DB, error) {
+	open := func() (*store.DB, error) {
 		db, err := openDatabase(databaseURL)
 		if err != nil {
 			return nil, err
@@ -93,15 +92,19 @@ func run(args []string, databaseURL string) error {
 	}
 }
 
-// openDatabase maps DATABASE_URL to a driver. SQLite only for now.
-func openDatabase(databaseURL string) (*sql.DB, error) {
+// openDatabase maps DATABASE_URL to a backend: sqlite:///path (dev/test),
+// sqlite://:memory:, or postgres://... (prod/operator).
+func openDatabase(databaseURL string) (*store.DB, error) {
 	if rest, ok := strings.CutPrefix(databaseURL, "sqlite://"); ok {
 		if rest == "" || rest == ":memory:" {
 			rest = "file::memory:?cache=shared"
 		}
 		return store.OpenSQLite(rest)
 	}
-	return nil, fmt.Errorf("unsupported DATABASE_URL %q (want sqlite://)", databaseURL)
+	if strings.HasPrefix(databaseURL, "postgres://") || strings.HasPrefix(databaseURL, "postgresql://") {
+		return store.OpenPostgres(databaseURL)
+	}
+	return nil, fmt.Errorf("unsupported DATABASE_URL %q (want sqlite:// or postgres://)", databaseURL)
 }
 
 // startServer opens, migrates, and serves on addr (use 127.0.0.1:0 for an

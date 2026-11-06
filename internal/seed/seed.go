@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"strings"
+
+	"rbac-go/internal/store"
 )
 
 // Seed loads the on-prem role/permission set (mirrors
@@ -13,7 +15,7 @@ import (
 // deploy like the operator migration Job. Only portable SQL: INSERT ..
 // ON CONFLICT DO NOTHING (SQLite + Postgres) plus SELECT-then-INSERT inside
 // one transaction for the access row.
-func Seed(db *sql.DB) error {
+func Seed(db *store.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -61,7 +63,7 @@ func Seed(db *sql.DB) error {
 // Bootstrap wires an org for on-prem use (mirrors operator
 // render_bootstrap_script): tenant + "CI Test Admin" group carrying the
 // seeded Cost Administrator role + one principal per username. Idempotent.
-func Bootstrap(db *sql.DB, orgID, accountID string, usernames []string) error {
+func Bootstrap(db *store.DB, orgID, accountID string, usernames []string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -124,7 +126,7 @@ func Bootstrap(db *sql.DB, orgID, accountID string, usernames []string) error {
 
 // getOrCreate selects the row id, inserting (which may be a no-op on
 // conflict) and re-selecting when absent.
-func getOrCreate(tx *sql.Tx, selectQ string, selectArgs []any, insertQ string, insertArgs ...any) (int64, error) {
+func getOrCreate(tx *store.Tx, selectQ string, selectArgs []any, insertQ string, insertArgs ...any) (int64, error) {
 	var id int64
 	err := tx.QueryRow(selectQ, selectArgs...).Scan(&id)
 	if err == nil {

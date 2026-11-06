@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"testing"
 
 	"rbac-go/internal/store"
+	"rbac-go/internal/testdb"
 )
 
 // mint builds an x-rh-identity header value for username in orgID.
@@ -37,7 +37,7 @@ func mint(t *testing.T, orgID, username string, isOrgAdmin bool) string {
 
 // seedAccess wires test_user in groupA with roleA granting app:*:* plus one
 // equal resourceDefinition (mirrors access_data in test_view.py).
-func seedAccess(t *testing.T, db *sql.DB) {
+func seedAccess(t *testing.T, db *store.DB) {
 	t.Helper()
 	exec := func(q string, args ...any) {
 		t.Helper()
@@ -72,14 +72,7 @@ func seedAccess(t *testing.T, db *sql.DB) {
 
 func testServerSeeded(t *testing.T) (*Server, string) {
 	t.Helper()
-	db, err := store.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := testdb.Open(t)
 	seedAccess(t, db)
 	return New(db), mint(t, "100001", "test_user", false)
 }
@@ -142,14 +135,7 @@ func TestAccessSuccess(t *testing.T) {
 // TestAccessPaginationWalk mirrors koku/koku/rbac.py::_request_user_access:
 // limit the page, follow links.next until exhausted, collect everything.
 func TestAccessPaginationWalk(t *testing.T) {
-	db, err := store.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := testdb.Open(t)
 	seedAccess(t, db)
 	for _, perm := range []string{"app:b:read", "app:c:read"} {
 		parts := map[string]string{"app:b:read": "b", "app:c:read": "c"}
@@ -213,15 +199,7 @@ func TestAccessPaginationWalk(t *testing.T) {
 
 func testServer(t *testing.T) *Server {
 	t.Helper()
-	db, err := store.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := store.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	return New(db)
+	return New(testdb.Open(t))
 }
 
 // TestStatus mirrors the operator probe (GET /api/rbac/v1/status/) and the
@@ -277,10 +255,7 @@ func TestReady(t *testing.T) {
 		t.Errorf("healthy: status = %d, want 200", rec.Code)
 	}
 
-	db, err := store.OpenSQLite(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := testdb.Open(t)
 	db.Close() // unreachable DB
 	sick := New(db)
 	req = httptest.NewRequest(http.MethodGet, "/api/rbac/v1/ready/", nil)

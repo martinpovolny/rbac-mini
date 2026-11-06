@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -13,18 +12,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"rbac-go/internal/access"
 	"rbac-go/internal/identity"
+	"rbac-go/internal/store"
 )
 
 // Server wires the v1 endpoints.
 type Server struct {
-	db       *sql.DB
+	db       *store.DB
 	mux      *http.ServeMux
 	requests *prometheus.CounterVec
 }
 
 // New returns the HTTP handler with the v1 routes registered. Metrics use a
 // per-Server registry so test servers stay isolated.
-func New(db *sql.DB) *Server {
+func New(db *store.DB) *Server {
 	s := &Server{db: db, mux: http.NewServeMux()}
 	s.requests = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "rbac_api_requests_total",
@@ -100,7 +100,7 @@ func writeError(w http.ResponseWriter, code int, detail string) {
 
 // ensureTenant creates the tenant row on first sight (bootstrap behavior,
 // SPEC §4). Idempotent and portable (works on SQLite and Postgres).
-func ensureTenant(db *sql.DB, orgID string) error {
+func ensureTenant(db *store.DB, orgID string) error {
 	_, err := db.Exec(
 		`INSERT INTO tenants(org_id, tenant_name, ready) VALUES(?,?,1)
 		 ON CONFLICT(org_id) DO NOTHING`, orgID, orgID)

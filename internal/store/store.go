@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"strings"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
 
@@ -100,22 +101,94 @@ CREATE INDEX IF NOT EXISTS idx_access_tenant ON access(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_resdef_access ON resource_definitions(access_id);
 `
 
-// OpenSQLite opens a SQLite DB (file or :memory:) with FK enforcement.
-func OpenSQLite(dsn string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dsn)
+// Driver names.
+const (
+	DriverSQLite   = "sqlite"
+	DriverPostgres = "postgres"
+)
+
+// DB wraps sql.DB with its dialect so every query is rebound to the right
+// placeholder style at the call site (SPEC §3).
+type DB struct {
+	*sql.DB
+	Driver string
+}
+
+// Tx wraps sql.Tx with its dialect.
+type Tx struct {
+	*sql.Tx
+	driver string
+}
+
+// Exec rebounds placeholders for the dialect.
+func (db *DB) Exec(query string, args ...any) (sql.Result, error) {
+	return db.DB.Exec(Rebind(db.Driver, query), args...)
+}
+
+// Query rebounds placeholders for the dialect.
+func (db *DB) Query(query string, args ...any) (*sql.Rows, error) {
+	return db.DB.Query(Rebind(db.Driver, query), args...)
+}
+
+// QueryRow rebounds placeholders for the dialect.
+func (db *DB) QueryRow(query string, args ...any) *sql.Row {
+	return db.DB.QueryRow(Rebind(db.Driver, query), args...)
+}
+
+// Begin starts a dialect-aware transaction.
+func (db *DB) Begin() (*Tx, error) {
+	tx, err := db.DB.Begin()
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return db, nil
+	return &Tx{Tx: tx, driver: db.Driver}, nil
 }
 
+// Exec rebounds placeholders for the dialect.
+func (tx *Tx) Exec(query string, args ...any) (sql.Result, error) {
+	return tx.Tx.Exec(Rebind(tx.driver, query), args...)
+}
+
+// QueryRow rebounds placeholders for the dialect.
+func (tx *Tx) QueryRow(query string, args ...any) *sql.Row {
+	return tx.Tx.QueryRow(Rebind(tx.driver, query), args...)
+}
+
+// OpenSQLite opens a SQLite DB (file or :memory:) with FK enforcement.
+// Single connection: :memory: databases are per-connection.
+func OpenSQLite(dsn string) (*DB, error) {
+	raw, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	raw.SetMaxOpenConns(1)
+	if _, err := raw.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		raw.Close()
+		return nil, err
+	}
+	return &DB{DB: raw, Driver: DriverSQLite}, nil
+}
+
+// OpenPostgres opens a Postgres DB (pgx stdlib, $n placeholders via Rebind).
+func OpenPostgres(dsn string) (*DB, error) {
+	raw, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+	return &DB{DB: raw, Driver: DriverPostgres}, nil
+}
+
+// SchemaPostgres is Schema with auto-increment PKs; everything else is
+// identical on purpose so both dialects behave the same.
+var SchemaPostgres = strings.ReplaceAll(Schema, "INTEGER PRIMARY KEY", "BIGSERIAL PRIMARY KEY")
+
 // Migrate applies the portable schema. Idempotent.
-func Migrate(db *sql.DB) error {
-	for _, stmt := range strings.Split(Schema, ";") {
+func Migrate(db *DB) error {
+	schema := Schema
+	if db.Driver == DriverPostgres {
+		schema = SchemaPostgres
+	}
+	for _, stmt := range strings.Split(schema, ";") {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
