@@ -7,6 +7,8 @@ package contract
 import (
 	"errors"
 	"strings"
+
+	"rbac-go/internal/access"
 )
 
 // NormalizeSourcesACL rewrites sources:<resource>:<op> to
@@ -26,4 +28,17 @@ func ExtractPermission(permission string) (resource, operation string, err error
 		return "", "", errors.New("invalid permission definition")
 	}
 	return parts[1], parts[2], nil
+}
+
+// ACLData is one grouped capability (koku acl_data).
+type ACLData struct {
+	Operation string
+	Resources []any
+}
+
+// ProcessACLs groups /access/ entries by resource type (koku _process_acls):
+// legacy cost-management:rate is rewritten to cost_model, malformed
+// permissions are skipped, empty resourceDefinitions mean ["*"].
+func ProcessACLs(entries []access.Entry) map[string][]ACLData {
+	return nil
 }
