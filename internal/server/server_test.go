@@ -138,6 +138,78 @@ func TestAccessSuccess(t *testing.T) {
 	}
 }
 
+// TestAccessPaginationWalk mirrors koku/koku/rbac.py::_request_user_access:
+// limit the page, follow links.next until exhausted, collect everything.
+func TestAccessPaginationWalk(t *testing.T) {
+	db, err := store.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	seedAccess(t, db)
+	for _, perm := range []string{"app:b:read", "app:c:read"} {
+		parts := map[string]string{"app:b:read": "b", "app:c:read": "c"}
+		res := parts[perm]
+		if _, err := db.Exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
+			VALUES('app',?, 'read',?,(SELECT id FROM tenants WHERE org_id='100001'))`, res, perm); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO access(role_id, permission_id, tenant_id) VALUES(
+			(SELECT id FROM roles WHERE uuid='r-a'),
+			(SELECT id FROM permissions WHERE permission=?),
+			(SELECT id FROM tenants WHERE org_id='100001'))`, perm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New(db)
+	header := mint(t, "100001", "test_user", false)
+
+	// Koku's walk: GET page, append data, follow links.next as path.
+	var collected []string
+	next := "/api/rbac/v1/access/?application=app&limit=2"
+	for next != "" {
+		req := httptest.NewRequest(http.MethodGet, next, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: status = %d, want 200", next, rec.Code)
+		}
+		var body struct {
+			Meta  struct{ Count int } `json:"meta"`
+			Links map[string]*string  `json:"links"`
+			Data  []struct {
+				Permission string `json:"permission"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if body.Meta.Count != 3 {
+			t.Fatalf("meta.count = %d, want 3", body.Meta.Count)
+		}
+		for _, d := range body.Data {
+			collected = append(collected, d.Permission)
+		}
+		next = ""
+		if body.Links["next"] != nil {
+			next = *body.Links["next"]
+		}
+	}
+	want := []string{"app:*:*", "app:b:read", "app:c:read"}
+	if len(collected) != len(want) {
+		t.Fatalf("walked %d permissions, want %d: %v", len(collected), len(want), collected)
+	}
+	for i := range want {
+		if collected[i] != want[i] {
+			t.Errorf("collected[%d] = %q, want %q (full: %v)", i, collected[i], want[i], collected)
+		}
+	}
+}
+
 func testServer(t *testing.T) *Server {
 	t.Helper()
 	db, err := store.OpenSQLite(":memory:")
