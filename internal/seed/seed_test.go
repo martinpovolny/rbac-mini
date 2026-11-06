@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"testing"
 
+	"rbac-go/internal/access"
 	"rbac-go/internal/store"
 )
 
@@ -63,6 +64,77 @@ func TestSeedCostAdministrator(t *testing.T) {
 	for table, n := range first {
 		if second[table] != n {
 			t.Errorf("%s: count changed %d -> %d, want idempotent", table, n, second[table])
+		}
+	}
+}
+
+// TestBootstrapGrantsCostAdministrator mirrors
+// operator render_bootstrap_script: tenant + "CI Test Admin" group carrying
+// the seeded Cost Administrator role + one principal per service account.
+// End-to-end check: the bootstrapped principal sees cost-management:*:*.
+func TestBootstrapGrantsCostAdministrator(t *testing.T) {
+	db := testDB(t)
+	if err := Seed(db); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	users := []string{"cost-mgmt-operator", "admin"}
+	if err := Bootstrap(db, "100001", "acct1111111", users); err != nil {
+		t.Fatalf("first Bootstrap returned error: %v", err)
+	}
+
+	var tenantName string
+	var ready int
+	if err := db.QueryRow(`SELECT tenant_name, ready FROM tenants WHERE org_id='100001'`).Scan(&tenantName, &ready); err != nil {
+		t.Fatalf("tenant missing: %v", err)
+	}
+	if ready != 1 {
+		t.Errorf("tenant ready = %d, want 1", ready)
+	}
+
+	var role string
+	err := db.QueryRow(`SELECT r.name FROM policies pol
+		JOIN groups g ON g.id = pol.group_id
+		JOIN policy_roles pr ON pr.policy_id = pol.id
+		JOIN roles r ON r.id = pr.role_id
+		JOIN tenants t ON t.id = pol.tenant_id
+		WHERE t.org_id='100001' AND g.name='CI Test Admin'`).Scan(&role)
+	if err != nil {
+		t.Fatalf("CI Test Admin policy missing: %v", err)
+	}
+	if role != "Cost Administrator" {
+		t.Errorf("role = %q, want %q", role, "Cost Administrator")
+	}
+
+	for _, u := range users {
+		var inGroup int
+		err := db.QueryRow(`SELECT COUNT(*) FROM principals pr
+			JOIN group_principals gp ON gp.principal_id = pr.id
+			JOIN groups g ON g.id = gp.group_id
+			JOIN tenants t ON t.id = pr.tenant_id AND t.id = g.tenant_id
+			WHERE t.org_id='100001' AND pr.username=? AND g.name='CI Test Admin'`, u).Scan(&inGroup)
+		if err != nil || inGroup != 1 {
+			t.Errorf("principal %q in group: count=%d, err=%v, want 1", u, inGroup, err)
+		}
+	}
+
+	got, err := access.Query(db, "100001", "cost-mgmt-operator", []string{"cost-management"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 || got[0].Permission != "cost-management:*:*" {
+		t.Errorf("access = %v, want [cost-management:*:*]", got)
+	}
+
+	// Idempotent like the seed: re-running changes nothing.
+	before := counts(t, db)
+	if err := Bootstrap(db, "100001", "acct1111111", users); err != nil {
+		t.Fatalf("second Bootstrap returned error: %v", err)
+	}
+	after := counts(t, db)
+	for table, n := range before {
+		if after[table] != n {
+			t.Errorf("%s: count changed %d -> %d, want idempotent", table, n, after[table])
 		}
 	}
 }
