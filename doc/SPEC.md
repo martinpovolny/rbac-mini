@@ -54,7 +54,7 @@ Header `X-Rh-Identity: <base64>` required. No DRF permission gate
 
 Response (must be byte-compatible — koku follows `links.next` as
 `base_url + next_link`, `koku/rbac.py:198-238`). Canonical contract is
-`rbac-go/openapi.v1-subset.json`, extracted from
+`doc/openapi.v1-subset.json`, extracted from
 `docs/source/specs/openapi.json` (paths `/access/`, `/status/` only):
 
 ```json
