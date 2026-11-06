@@ -4,11 +4,12 @@ How to point `koku-service-operator` at this binary. Code changes below are
 all in the operator repo (`internal/resources/`, `config/`); rbac-go needs no
 changes except where marked TODO.
 
-## 0. Open decisions (blocking the swap)
+## 0. Open decisions
 
-1. **Image registry + tag**: `quay.io/project-koku/rbac-go:<tag>` (new repo)
-   vs reusing the `insights-rbac` repo name. The operator's `RBACConfig.Image`
-   just needs the new default; version with the operator release.
+1. **Image registry + tag**: RESOLVED — `quay.io/martin_povolny/rbac-go:v0.1.0`
+   (`sha256:6604e5275978585e65fdd394f0879c4ec53b49b7f79693f83119623b39562514`,
+   pushed 2026-11-06). Operator's `RBACConfig.Image` default becomes
+   repository `quay.io/martin_povolny/rbac-go`, tag `v0.1.0`.
 2. **Multi-org Keycloak sync**: the current `sync_keycloak_principals.py`
    iterates Keycloak groups (`org-` prefix) across orgs. `rbac-go sync` handles
    one `--org`/`--group` per invocation. Either extend `sync` to loop groups
