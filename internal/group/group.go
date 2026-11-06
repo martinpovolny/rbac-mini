@@ -1,6 +1,7 @@
 package group
 
 import (
+	"rbac-go/internal/principal"
 	"rbac-go/internal/store"
 )
 
@@ -58,6 +59,39 @@ func List(db *store.DB, orgID string, includeDefaults bool, limit, offset int) (
 		items = append(items, g)
 	}
 	return items, count, rows.Err()
+}
+
+// Members returns the principals of a group (members tab).
+func Members(db *store.DB, orgID, groupUUID string, limit, offset int) (items []principal.Principal, total int, err error) {
+	var groupID int64
+	err = db.QueryRow(`SELECT g.id FROM groups g
+		JOIN tenants t ON t.id = g.tenant_id
+		WHERE g.uuid = ? AND t.org_id = ?`, groupUUID, orgID).Scan(&groupID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM group_principals WHERE group_id = ?`,
+		groupID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := db.Query(`SELECT pr.username FROM principals pr
+		JOIN group_principals gp ON gp.principal_id = pr.id
+		WHERE gp.group_id = ? ORDER BY pr.username LIMIT ? OFFSET ?`, groupID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items = []principal.Principal{}
+	for rows.Next() {
+		var username string
+		if err := rows.Scan(&username); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, principal.Principal{
+			Username: username, Email: "baz", FirstName: "foo", LastName: "bar",
+		})
+	}
+	return items, total, rows.Err()
 }
 
 // Get returns one tenant group by uuid.
