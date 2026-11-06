@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -45,6 +46,9 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("GET /api/rbac/v1/permissions/options/", s.handlePermissionOptions)
 	s.mux.HandleFunc("POST /api/rbac/v1/roles/", s.handleRoleCreate)
 	s.mux.HandleFunc("GET /api/rbac/v1/roles/", s.handleRolesList)
+	s.mux.HandleFunc("PUT /api/rbac/v1/roles/{uuid}/", s.handleRoleUpdate)
+	s.mux.HandleFunc("PATCH /api/rbac/v1/roles/{uuid}/", s.handleRolePatch)
+	s.mux.HandleFunc("DELETE /api/rbac/v1/roles/{uuid}/", s.handleRoleDelete)
 	s.mux.HandleFunc("GET /api/rbac/v1/roles/{uuid}/", s.handleRoleDetail)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	return s
@@ -533,6 +537,113 @@ func (s *Server) handleRolesList(w http.ResponseWriter, r *http.Request) {
 		},
 		"data": items,
 	})
+}
+
+// roleWriteError maps domain errors to v1 responses.
+func roleWriteError(w http.ResponseWriter, err error) {
+	var notAllowed *role.ErrAppNotAllowed
+	var unknown *role.ErrUnknownPermission
+	var sys role.ErrSystemProtected
+	switch {
+	case errors.As(err, &notAllowed), errors.As(err, &unknown), errors.As(err, &sys):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err == sql.ErrNoRows:
+		writeError(w, http.StatusNotFound, "not found")
+	default:
+		msg := err.Error()
+		if strings.Contains(msg, "already exists") || strings.Contains(msg, "required") ||
+			strings.Contains(msg, "not supported") || strings.Contains(msg, "UNIQUE") ||
+			strings.Contains(msg, "unique") {
+			writeError(w, http.StatusBadRequest, msg)
+		} else {
+			writeError(w, http.StatusInternalServerError, "unexpected error")
+		}
+	}
+}
+
+// handleRoleUpdate serves PUT /api/rbac/v1/roles/{uuid}/ (full replace).
+func (s *Server) handleRoleUpdate(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var body struct {
+		Name        string `json:"name"`
+		DisplayName string `json:"display_name"`
+		Description string `json:"description"`
+		Access      []struct {
+			Permission          string                      `json:"permission"`
+			ResourceDefinitions []access.ResourceDefinition `json:"resourceDefinitions"`
+		} `json:"access"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	grants := make([]role.AccessIn, 0, len(body.Access))
+	for _, a := range body.Access {
+		grants = append(grants, role.AccessIn{Permission: a.Permission, ResourceDefinitions: a.ResourceDefinitions})
+	}
+	updated, err := role.Update(s.db, user.OrgID, r.PathValue("uuid"), body.Name,
+		body.DisplayName, body.Description, grants, strings.Split(os.Getenv("ROLE_CREATE_ALLOW_LIST"), ","))
+	if err != nil {
+		roleWriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleRolePatch serves PATCH /api/rbac/v1/roles/{uuid}/.
+func (s *Server) handleRolePatch(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var raw map[string]any
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&raw); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	fields := map[string]string{}
+	for k, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		fields[k] = s
+	}
+	patched, err := role.Patch(s.db, user.OrgID, r.PathValue("uuid"), fields)
+	if err != nil {
+		roleWriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, patched)
+}
+
+// handleRoleDelete serves DELETE /api/rbac/v1/roles/{uuid}/.
+func (s *Server) handleRoleDelete(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := role.Delete(s.db, user.OrgID, r.PathValue("uuid")); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		var sys role.ErrSystemProtected
+		if errors.As(err, &sys) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleRoleDetail serves GET /api/rbac/v1/roles/{uuid}/.

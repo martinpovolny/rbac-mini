@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"rbac-go/internal/seed"
 	"rbac-go/internal/store"
 	"rbac-go/internal/testdb"
 )
@@ -602,7 +603,16 @@ func TestPatchRole(t *testing.T) {
 // TestDeleteRole: DELETE removes a custom role (204, then 404); system
 // roles (seeded Cost Administrator) are protected.
 func TestDeleteRole(t *testing.T) {
-	s, header := testServerSeeded(t)
+	db := testdb.Open(t)
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	seedAccess(t, db)
+	if err := seed.Seed(db); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	s := New(db)
+	header := mint(t, "100001", "test_user", false)
 	uuid := createRole(t, s, header, "roleDel", "cost-management:aws.account:read")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/rbac/v1/roles/"+uuid+"/", nil)
