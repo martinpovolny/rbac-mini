@@ -1,9 +1,7 @@
 package seed
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"strings"
 
 	"rbac-go/internal/store"
@@ -35,7 +33,7 @@ func Seed(db *store.DB) error {
 		`SELECT id FROM roles WHERE name='Cost Administrator' AND tenant_id=?`, []any{tenantID},
 		`INSERT INTO roles(uuid, name, display_name, system, tenant_id)
 		 VALUES(?, 'Cost Administrator', 'Cost Administrator', 1, ?)
-		 ON CONFLICT(name, tenant_id) DO NOTHING`, newUUID(), tenantID)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), tenantID)
 	if err != nil {
 		return err
 	}
@@ -83,7 +81,7 @@ func Bootstrap(db *store.DB, orgID, accountID string, usernames []string) error 
 		`SELECT id FROM groups WHERE name='CI Test Admin' AND tenant_id=?`, []any{tenantID},
 		`INSERT INTO groups(uuid, name, description, system, tenant_id)
 		 VALUES(?, 'CI Test Admin', 'CI service account admin access', 1, ?)
-		 ON CONFLICT(name, tenant_id) DO NOTHING`, newUUID(), tenantID)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), tenantID)
 	if err != nil {
 		return err
 	}
@@ -91,7 +89,7 @@ func Bootstrap(db *store.DB, orgID, accountID string, usernames []string) error 
 		`SELECT id FROM policies WHERE name='CI Test Admin Policy' AND tenant_id=?`, []any{tenantID},
 		`INSERT INTO policies(uuid, name, group_id, tenant_id)
 		 VALUES(?, 'CI Test Admin Policy', ?, ?)
-		 ON CONFLICT(name, tenant_id) DO NOTHING`, newUUID(), groupID, tenantID)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), groupID, tenantID)
 	if err != nil {
 		return err
 	}
@@ -111,7 +109,7 @@ func Bootstrap(db *store.DB, orgID, accountID string, usernames []string) error 
 			`SELECT id FROM principals WHERE username=? AND tenant_id=?`, []any{username, tenantID},
 			`INSERT INTO principals(uuid, username, type, tenant_id)
 			 VALUES(?, ?, 'user', ?) ON CONFLICT(username, tenant_id) DO NOTHING`,
-			newUUID(), username, tenantID)
+			store.NewUUID(), username, tenantID)
 		if err != nil {
 			return err
 		}
@@ -140,22 +138,4 @@ func getOrCreate(tx *store.Tx, selectQ string, selectArgs []any, insertQ string,
 	}
 	err = tx.QueryRow(selectQ, selectArgs...).Scan(&id)
 	return id, err
-}
-
-func newUUID() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	dst := make([]byte, 36)
-	hex.Encode(dst[0:8], b[0:4])
-	dst[8] = '-'
-	hex.Encode(dst[9:13], b[4:6])
-	dst[13] = '-'
-	hex.Encode(dst[14:18], b[6:8])
-	dst[18] = '-'
-	hex.Encode(dst[19:23], b[8:10])
-	dst[23] = '-'
-	hex.Encode(dst[24:], b[10:])
-	return string(dst)
 }

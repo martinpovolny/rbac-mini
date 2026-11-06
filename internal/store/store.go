@@ -1,12 +1,33 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
+
+// NewUUID returns a random v4 UUID string (DB stores UUIDs as TEXT).
+func NewUUID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	dst := make([]byte, 36)
+	hex.Encode(dst[0:8], b[0:4])
+	dst[8] = '-'
+	hex.Encode(dst[9:13], b[4:6])
+	dst[13] = '-'
+	hex.Encode(dst[14:18], b[6:8])
+	dst[18] = '-'
+	hex.Encode(dst[19:23], b[8:10])
+	dst[23] = '-'
+	hex.Encode(dst[24:], b[10:])
+	return string(dst)
+}
 
 // Schema is the portable DDL for the 10 v1 tables (SPEC §3).
 // Types are restricted to INTEGER / TEXT so the same statements run on
