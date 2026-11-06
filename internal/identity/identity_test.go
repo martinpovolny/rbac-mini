@@ -1,0 +1,52 @@
+package identity
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+// Mint builds an x-rh-identity header value the same way
+// tests/identity_request.py::_build_identity does.
+func mint(t *testing.T, orgID, username string, isOrgAdmin bool) string {
+	t.Helper()
+	id := map[string]any{
+		"identity": map[string]any{
+			"account_number": "1111111",
+			"org_id":         orgID,
+			"type":           "User",
+			"user": map[string]any{
+				"username":     username,
+				"email":        username + "@example.com",
+				"is_org_admin": isOrgAdmin,
+				"user_id":      "1111111",
+			},
+		},
+	}
+	raw, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func TestParseRegularUser(t *testing.T) {
+	h := mint(t, "100001", "Test_User", false)
+	got, err := Parse(h)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if got.OrgID != "100001" {
+		t.Errorf("OrgID = %q, want %q", got.OrgID, "100001")
+	}
+	if got.Username != strings.ToLower("Test_User") {
+		t.Errorf("Username = %q, want lowercased %q", got.Username, "test_user")
+	}
+	if got.Admin {
+		t.Errorf("Admin = true, want false")
+	}
+	if got.IsServiceAcct {
+		t.Errorf("IsServiceAcct = true, want false")
+	}
+}
