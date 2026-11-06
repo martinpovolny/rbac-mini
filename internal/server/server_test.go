@@ -708,3 +708,60 @@ func TestGroupsList(t *testing.T) {
 		t.Errorf("group = %+v, want groupA with 1 principal and 1 role", g)
 	}
 }
+
+// groupUUID resolves a group uuid by name via the list endpoint.
+func groupUUID(t *testing.T, s *Server, header, name string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/?limit=100", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("groups list: status = %d", rec.Code)
+	}
+	var body struct {
+		Data []struct {
+			UUID string `json:"uuid"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range body.Data {
+		if g.Name == name {
+			return g.UUID
+		}
+	}
+	t.Fatalf("group %q not found in %+v", name, body.Data)
+	return ""
+}
+
+// TestGroupPrincipals: members tab of a group.
+func TestGroupPrincipals(t *testing.T) {
+	s, header := testServerSeeded(t)
+	uuid := groupUUID(t, s, header, "groupA")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+uuid+"/principals/?limit=20", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Meta struct {
+			Count int `json:"count"`
+		} `json:"meta"`
+		Data []struct {
+			Username string `json:"username"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Meta.Count != 1 || len(body.Data) != 1 || body.Data[0].Username != "test_user" {
+		t.Errorf("members = %+v, want [test_user]", body.Data)
+	}
+}
