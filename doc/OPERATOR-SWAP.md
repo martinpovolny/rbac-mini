@@ -79,21 +79,26 @@ ones in a later release. `waitForRBACDB` initContainer unchanged.
 5. ServiceMonitor `/metrics/` target unchanged; `rbac_api_requests_total`
    replaces the Django metric names on dashboards.
 
-## 7. Helm-rendered env contract (verified 2026-11-06)
+## 7. Operator-side env contract (verified 2026-11-06)
 
-Rendered `cost-onprem-chart/cost-onprem` with the external-Valkey values
-(`valkey.deploy=false`, auth+TLS on) — 72 manifests, `helm template` exit 0.
-The `rbac-api` Deployment carries envs rbac-go must accept; status:
+Source of truth is the operator itself: `rbacEnv()` in
+`koku-service-operator/internal/resources/rbac.go`, pinned by its Go tests
+(all passing — `go test ./internal/resources/ -run
+'TestRBACEnv|TestRBACAPIService|TestRBACAPIDeployment|TestRBACWorkerDeployment'`
+→ 7/7 PASS):
 
-| Env | Rendered value | rbac-go behavior |
-|---|---|---|
-| `REDIS_HOST/PORT` | external host/port | accepted, ignored (no Valkey client) |
-| `REDIS_PASSWORD/USERNAME` | secretRef | accepted, ignored |
-| `REDIS_SSL/REDIS_SSL_CA_CERTS` | `True` + ca path | accepted, ignored |
-| `DATABASE_HOST/NAME` (+`PORT/USER/PASSWORD`) | cluster DB, `costonprem_rbac` | honored via `resolveDatabaseURL` |
-| `ACCESS_CACHE_ENABLED` | `True` | accepted, treated as false |
-| `DJANGO_SECRET_KEY` | secretRef | accepted, ignored |
+* `API_PATH_PREFIX=/api/rbac` (`TestRBACEnvAPIPathPrefix`).
+* `ROLE_CREATE_ALLOW_LIST=cost-management,sources` (`TestRBACEnvRoleCreateAllowList`).
+* `REDIS_HOST/PORT` from `spec.cache` with `6379` default (`TestRBACEnvUsesConfiguredCachePort`, `TestRBACEnvDefaultsCachePort`).
+* Probes `GET /api/rbac/v1/status/`, Service `ClusterIP :8080`, `ServiceAccount`
+  (`TestRBACAPIService`, `TestRBACAPIDeploymentServiceAccount`, `TestRBACWorkerDeployment`).
+
+(Note: an earlier draft verified `cost-onprem-chart/cost-onprem` via
+`helm template` — that chart is obsolete; the operator's Go renderers above
+are the relevant contract. The `REDIS_*`/`DJANGO_SECRET_KEY`/
+`ACCESS_CACHE_ENABLED` vars rbac-go accepts-but-ignores come from this same
+`rbacEnv()`; they stay so these tests keep passing.)
 
 Command/args replaced: `gunicorn rbac.wsgi …` → `rbac-go serve --addr :8080`;
-`celery … worker` (rbac-worker) deleted. Probes (`/api/rbac/v1/status/`),
-port `8080/http`, Service, Envoy route all unchanged.
+`celery … worker` (rbac-worker) deleted. Probes, port, Service, Envoy route
+all unchanged.
