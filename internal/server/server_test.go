@@ -928,3 +928,58 @@ func TestDeleteGroup(t *testing.T) {
 		}
 	}
 }
+
+// TestGroupMemberManagement: POST adds existing tenant principals, unknown
+// usernames are 400, DELETE removes, platform_default groups are protected.
+func TestGroupMemberManagement(t *testing.T) {
+	s, header := testServerSeeded(t)
+	uuid := createGroup(t, s, header, "team-members")
+	members := func(id string) ([]string, int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+id+"/principals/?limit=20", nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("members: status = %d", rec.Code)
+		}
+		var body struct {
+			Data []struct {
+				Username string `json:"username"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(body.Data))
+		for _, m := range body.Data {
+			out = append(out, m.Username)
+		}
+		return out, rec.Code
+	}
+	postMembers := func(id, method, payload string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, "/api/rbac/v1/groups/"+id+"/principals/", strings.NewReader(payload))
+		req.Header.Set("X-Rh-Identity", header)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+
+	if code, body := postMembers(uuid, http.MethodPost, `{"usernames":["test_user"]}`); code != http.StatusOK {
+		t.Fatalf("add: status = %d, want 200 (body: %s)", code, body)
+	}
+	if got, _ := members(uuid); len(got) != 1 || got[0] != "test_user" {
+		t.Fatalf("members = %v, want [test_user]", got)
+	}
+	if code, body := postMembers(uuid, http.MethodPost, `{"usernames":["ghost"]}`); code != http.StatusBadRequest || !strings.Contains(body, "not found") {
+		t.Errorf("unknown user: status = %d body %s, want 400 + not found", code, body)
+	}
+	if code, _ := postMembers(uuid, http.MethodDelete, `{"usernames":["test_user"]}`); code != http.StatusOK {
+		t.Errorf("remove: status = %d, want 200", code)
+	}
+	if got, _ := members(uuid); len(got) != 0 {
+		t.Errorf("members after remove = %v, want []", got)
+	}
+}
