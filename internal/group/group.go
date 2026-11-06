@@ -181,6 +181,77 @@ func isUniqueViolation(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "UNIQUE constraint failed") || strings.Contains(msg, "duplicate key value")
 }
+
+// ErrProtected is returned for writes to default groups.
+type ErrProtected struct{ Action, Kind string }
+
+func (e ErrProtected) Error() string {
+	return e.Action + " cannot be performed on " + e.Kind + " groups."
+}
+
+// Update renames/re-describes a group, honoring Django's default-group guards.
+func Update(db *store.DB, orgID, uuid, name, description string, setDescription bool) (Group, error) {
+	if name == "" {
+		return Group{}, fmt.Errorf("name is required")
+	}
+	if len(name) > 150 {
+		return Group{}, fmt.Errorf("name is too long (max 150)")
+	}
+	if reservedNames[strings.ToLower(name)] {
+		return Group{}, ErrReservedName{Name: name}
+	}
+	var id int64
+	var pd, ad int
+	if err := db.QueryRow(`SELECT g.id, g.platform_default, g.admin_default FROM groups g
+		JOIN tenants t ON t.id = g.tenant_id
+		WHERE g.uuid = ? AND t.org_id = ?`, uuid, orgID).Scan(&id, &pd, &ad); err != nil {
+		return Group{}, err
+	}
+	if pd != 0 {
+		return Group{}, ErrProtected{Action: "UPDATE", Kind: "platform_default"}
+	}
+	if ad != 0 {
+		return Group{}, fmt.Errorf("Default admin access cannot be modified.")
+	}
+	if setDescription {
+		if _, err := db.Exec(`UPDATE groups SET name=?, description=? WHERE id=?`, name, description, id); err != nil {
+			return Group{}, mapUnique(err, name)
+		}
+	} else {
+		if _, err := db.Exec(`UPDATE groups SET name=? WHERE id=?`, name, id); err != nil {
+			return Group{}, mapUnique(err, name)
+		}
+	}
+	return Get(db, orgID, uuid)
+}
+
+func mapUnique(err error, name string) error {
+	if isUniqueViolation(err) {
+		return ErrDuplicate{Name: name}
+	}
+	return err
+}
+
+// Delete removes a custom group (memberships cascade).
+func Delete(db *store.DB, orgID, uuid string) error {
+	var id int64
+	var pd, ad int
+	if err := db.QueryRow(`SELECT g.id, g.platform_default, g.admin_default FROM groups g
+		JOIN tenants t ON t.id = g.tenant_id
+		WHERE g.uuid = ? AND t.org_id = ?`, uuid, orgID).Scan(&id, &pd, &ad); err != nil {
+		return err
+	}
+	if pd != 0 {
+		return ErrProtected{Action: "DELETE", Kind: "platform_default"}
+	}
+	if ad != 0 {
+		return ErrProtected{Action: "DELETE", Kind: "admin_default"}
+	}
+	_, err := db.Exec(`DELETE FROM groups WHERE id=?`, id)
+	return err
+}
+
+// Get returns one tenant group by uuid.
 func Get(db *store.DB, orgID, uuid string) (Group, error) {
 	var g Group
 	var desc string

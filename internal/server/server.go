@@ -54,6 +54,8 @@ func New(db *store.DB) *Server {
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/", s.handleGroupsList)
 	s.mux.HandleFunc("POST /api/rbac/v1/groups/", s.handleGroupCreate)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/", s.handleGroupDetail)
+	s.mux.HandleFunc("PUT /api/rbac/v1/groups/{uuid}/", s.handleGroupUpdate)
+	s.mux.HandleFunc("DELETE /api/rbac/v1/groups/{uuid}/", s.handleGroupDelete)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/principals/", s.handleGroupPrincipals)
 	s.mux.HandleFunc("GET /api/rbac/v1/groups/{uuid}/roles/", s.handleGroupRoles)
 	s.mux.Handle("GET /metrics/", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
@@ -728,6 +730,93 @@ func (s *Server) handleGroupPrincipals(w http.ResponseWriter, r *http.Request) {
 		},
 		"data": items,
 	})
+}
+
+// groupWriteError maps group domain errors to v1 responses.
+func groupWriteError(w http.ResponseWriter, err error) {
+	var dup group.ErrDuplicate
+	var reserved group.ErrReservedName
+	var protected group.ErrProtected
+	switch {
+	case errors.As(err, &dup), errors.As(err, &reserved), errors.As(err, &protected):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case err == sql.ErrNoRows:
+		writeError(w, http.StatusNotFound, "not found")
+	default:
+		msg := err.Error()
+		if strings.Contains(msg, "required") || strings.Contains(msg, "too long") ||
+			strings.Contains(msg, "cannot be modified") {
+			writeError(w, http.StatusBadRequest, msg)
+		} else {
+			writeError(w, http.StatusInternalServerError, "unexpected error")
+		}
+	}
+}
+
+// handleGroupUpdate serves PUT /api/rbac/v1/groups/{uuid}/.
+func (s *Server) handleGroupUpdate(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	var body struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.Name == nil && body.Description == nil {
+		writeError(w, http.StatusBadRequest, "nothing to update")
+		return
+	}
+	name, desc := "", ""
+	setDesc := body.Description != nil
+	if body.Name != nil {
+		name = *body.Name
+	} else {
+		// Name unchanged: read current name so the guard checks run on it.
+		current, err := group.Get(s.db, user.OrgID, r.PathValue("uuid"))
+		if err != nil {
+			groupWriteError(w, err)
+			return
+		}
+		name = current.Name
+	}
+	if setDesc {
+		desc = *body.Description
+	}
+	updated, err := group.Update(s.db, user.OrgID, r.PathValue("uuid"), name, desc, setDesc)
+	if err != nil {
+		groupWriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleGroupDelete serves DELETE /api/rbac/v1/groups/{uuid}/.
+func (s *Server) handleGroupDelete(w http.ResponseWriter, r *http.Request) {
+	user, err := identity.Parse(r.Header.Get("X-Rh-Identity"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := group.Delete(s.db, user.OrgID, r.PathValue("uuid")); err != nil {
+		var protected group.ErrProtected
+		if errors.As(err, &protected) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "unexpected error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleGroupDetail serves GET /api/rbac/v1/groups/{uuid}/.
