@@ -9,21 +9,21 @@ import (
 
 // User is the request identity derived from x-rh-identity.
 type User struct {
-	Username        string
-	OrgID           string
-	Admin           bool
-	IsServiceAcct   bool
-	ClientID        string
+	Username      string
+	OrgID         string
+	Admin         bool
+	IsServiceAcct bool
+	ClientID      string
 }
 
 type rhIdentity struct {
 	OrgID    string `json:"org_id"`
 	Identity struct {
-		OrgID          string `json:"org_id"`
-		AccountNumber  string `json:"account_number"`
-		Type           string `json:"type"`
-		User           *struct {
-			Username  string `json:"username"`
+		OrgID         string `json:"org_id"`
+		AccountNumber string `json:"account_number"`
+		Type          string `json:"type"`
+		User          *struct {
+			Username   string `json:"username"`
 			IsOrgAdmin bool   `json:"is_org_admin"`
 		} `json:"user"`
 		ServiceAccount *struct {

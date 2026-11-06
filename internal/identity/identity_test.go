@@ -31,6 +31,19 @@ func mint(t *testing.T, orgID, username string, isOrgAdmin bool) string {
 	return base64.StdEncoding.EncodeToString(raw)
 }
 
+func TestParseOrgAdmin(t *testing.T) {
+	h := mint(t, "100001", "Admin_User", true)
+	got, err := Parse(h)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !got.Admin {
+		t.Errorf("Admin = false, want true (koku bypass path)")
+	}
+	if got.Username != "admin_user" {
+		t.Errorf("Username = %q, want %q", got.Username, "admin_user")
+	}
+}
 func TestParseRegularUser(t *testing.T) {
 	h := mint(t, "100001", "Test_User", false)
 	got, err := Parse(h)
