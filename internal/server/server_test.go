@@ -983,3 +983,58 @@ func TestGroupMemberManagement(t *testing.T) {
 		t.Errorf("members after remove = %v, want []", got)
 	}
 }
+
+// TestGroupRolesAssign: POST grants roles to the group (via its policy),
+// DELETE ?roles= removes them; admin_default groups are protected.
+func TestGroupRolesAssign(t *testing.T) {
+	s, header := testServerSeeded(t)
+	groupUUID := groupUUID(t, s, header, "groupA")
+	roleUUID := createRole(t, s, header, "roleGrant", "cost-management:aws.account:read")
+
+	assign := func(method, query, payload string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, "/api/rbac/v1/groups/"+groupUUID+"/roles/"+query,
+			strings.NewReader(payload))
+		req.Header.Set("X-Rh-Identity", header)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	roles := func() []string {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+groupUUID+"/roles/?limit=20", nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("roles: status = %d", rec.Code)
+		}
+		var body struct {
+			Data []struct {
+				Name string `json:"name"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(body.Data))
+		for _, r := range body.Data {
+			out = append(out, r.Name)
+		}
+		return out
+	}
+
+	if code, body := assign(http.MethodPost, "", `{"roles":["`+roleUUID+`"]}`); code != http.StatusOK {
+		t.Fatalf("assign: status = %d, want 200 (body: %s)", code, body)
+	}
+	if got := roles(); len(got) != 2 {
+		t.Fatalf("roles = %v, want [roleA roleGrant]", got)
+	}
+	if code, _ := assign(http.MethodDelete, "?roles="+roleUUID, ""); code != http.StatusNoContent {
+		t.Errorf("remove: status = %d, want 204", code)
+	}
+	if got := roles(); len(got) != 1 || got[0] != "roleA" {
+		t.Errorf("roles after remove = %v, want [roleA]", got)
+	}
+}
