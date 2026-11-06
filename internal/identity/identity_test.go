@@ -44,6 +44,50 @@ func TestParseOrgAdmin(t *testing.T) {
 		t.Errorf("Username = %q, want %q", got.Username, "admin_user")
 	}
 }
+
+// mintSA builds a service-account x-rh-identity the same way
+// tests/identity_request.py::_build_identity does with service_account_data.
+func mintSA(t *testing.T, orgID, clientID string) string {
+	t.Helper()
+	username := "service-account-" + clientID
+	id := map[string]any{
+		"identity": map[string]any{
+			"account_number": "1111111",
+			"org_id":         orgID,
+			"type":           "ServiceAccount",
+			"service_account": map[string]any{
+				"client_id": clientID,
+				"username":  username,
+			},
+		},
+	}
+	raw, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func TestParseServiceAccount(t *testing.T) {
+	h := mintSA(t, "100001", "abc-123")
+	got, err := Parse(h)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if !got.IsServiceAcct {
+		t.Errorf("IsServiceAcct = false, want true")
+	}
+	if got.ClientID != "abc-123" {
+		t.Errorf("ClientID = %q, want %q", got.ClientID, "abc-123")
+	}
+	if got.Username != "service-account-abc-123" {
+		t.Errorf("Username = %q, want %q", got.Username, "service-account-abc-123")
+	}
+	if got.Admin {
+		t.Errorf("Admin = true, want false (service accounts are never org admins)")
+	}
+}
+
 func TestParseRegularUser(t *testing.T) {
 	h := mint(t, "100001", "Test_User", false)
 	got, err := Parse(h)
