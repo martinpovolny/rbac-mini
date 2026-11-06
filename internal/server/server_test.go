@@ -511,3 +511,143 @@ func TestRolesList(t *testing.T) {
 		t.Errorf("data = %+v, want fixture roleA with uuid", body.Data)
 	}
 }
+
+// createRole posts a role and returns its uuid.
+func createRole(t *testing.T, s *Server, header, name, perm string) string {
+	t.Helper()
+	t.Setenv("ROLE_CREATE_ALLOW_LIST", "cost-management")
+	body := `{"name":"` + name + `","access":[{"permission":"` + perm + `","resourceDefinitions":[]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/rbac/v1/roles/", strings.NewReader(body))
+	req.Header.Set("X-Rh-Identity", header)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup POST role: status = %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return created.UUID
+}
+
+// TestUpdateRole: PUT replaces name + access grants.
+func TestUpdateRole(t *testing.T) {
+	s, header := testServerSeeded(t)
+	t.Setenv("ROLE_CREATE_ALLOW_LIST", "cost-management")
+	uuid := createRole(t, s, header, "roleUp", "cost-management:aws.account:read")
+
+	body := `{"name":"roleUpRenamed","access":[{"permission":"cost-management:aws.account:read","resourceDefinitions":[{"attributeFilter":{"key":"k","operation":"equal","value":"v"}}]}]}`
+	req := httptest.NewRequest(http.MethodPut, "/api/rbac/v1/roles/"+uuid+"/", strings.NewReader(body))
+	req.Header.Set("X-Rh-Identity", header)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/"+uuid+"/", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	var detail struct {
+		Name   string `json:"name"`
+		Access []struct {
+			ResourceDefinitions []struct {
+				AttributeFilter map[string]any `json:"attributeFilter"`
+			} `json:"resourceDefinitions"`
+		} `json:"access"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Name != "roleUpRenamed" {
+		t.Errorf("name = %q, want roleUpRenamed", detail.Name)
+	}
+	if len(detail.Access) != 1 || len(detail.Access[0].ResourceDefinitions) != 1 {
+		t.Fatalf("access = %+v, want 1 grant with 1 resourceDefinition", detail.Access)
+	}
+}
+
+// TestPatchRole: PATCH allows name/display_name/description only.
+func TestPatchRole(t *testing.T) {
+	s, header := testServerSeeded(t)
+	uuid := createRole(t, s, header, "rolePatch", "cost-management:aws.account:read")
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/rbac/v1/roles/"+uuid+"/",
+		strings.NewReader(`{"description":"patched"}`))
+	req.Header.Set("X-Rh-Identity", header)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/rbac/v1/roles/"+uuid+"/",
+		strings.NewReader(`{"access":[]}`))
+	req.Header.Set("X-Rh-Identity", header)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("patch access: status = %d, want 400", rec.Code)
+	}
+}
+
+// TestDeleteRole: DELETE removes a custom role (204, then 404); system
+// roles (seeded Cost Administrator) are protected.
+func TestDeleteRole(t *testing.T) {
+	s, header := testServerSeeded(t)
+	uuid := createRole(t, s, header, "roleDel", "cost-management:aws.account:read")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/rbac/v1/roles/"+uuid+"/", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/"+uuid+"/", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("detail after delete: status = %d, want 404", rec.Code)
+	}
+
+	// System roles are protected: find Cost Administrator via list.
+	req = httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/?name=Cost+Administrator", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	var list struct {
+		Data []struct {
+			UUID string `json:"uuid"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list.Data) != 1 {
+		t.Fatalf("admin lookup: %v %+v", err, list)
+	}
+	adminUUID := list.Data[0].UUID
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		var rreq *http.Request
+		if method == http.MethodPut {
+			rreq = httptest.NewRequest(method, "/api/rbac/v1/roles/"+adminUUID+"/",
+				strings.NewReader(`{"name":"hacked"}`))
+			rreq.Header.Set("Content-Type", "application/json")
+		} else {
+			rreq = httptest.NewRequest(method, "/api/rbac/v1/roles/"+adminUUID+"/", nil)
+		}
+		rreq.Header.Set("X-Rh-Identity", header)
+		rrec := httptest.NewRecorder()
+		s.ServeHTTP(rrec, rreq)
+		if rrec.Code != http.StatusBadRequest {
+			t.Errorf("system role %s: status = %d, want 400", method, rrec.Code)
+		}
+	}
+}
