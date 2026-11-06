@@ -30,6 +30,26 @@ func main() {
 	}
 }
 
+// envOr returns the env value or a default.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// envBool parses a bool env with a default.
+func envBool(key string, def bool) bool {
+	switch os.Getenv(key) {
+	case "true", "1", "yes":
+		return true
+	case "false", "0", "no":
+		return false
+	default:
+		return def
+	}
+}
+
 // resolveDatabaseURL prefers DATABASE_URL, else assembles postgres:// from
 // the operator-injected DATABASE_{HOST,PORT,NAME,USER,PASSWORD} (SPEC §5),
 // else falls back to a local dev SQLite file.
@@ -114,18 +134,18 @@ func run(args []string, databaseURL string) error {
 		return seed.Bootstrap(db, *org, *account, strings.Split(*users, ","))
 	case "sync":
 		fs := flag.NewFlagSet("sync", flag.ContinueOnError)
-		keycloakURL := fs.String("keycloak-url", "", "Keycloak base URL")
-		realm := fs.String("realm", "", "Keycloak realm")
-		clientID := fs.String("client-id", "rbac-keycloak-sync", "client id")
-		clientSecret := fs.String("client-secret", "", "client secret")
-		org := fs.String("org", "", "org_id")
-		group := fs.String("group", "CI Test Admin", "tenant group for synced users")
-		prune := fs.Bool("prune-orphans", true, "delete principals gone from Keycloak")
+		keycloakURL := fs.String("keycloak-url", os.Getenv("KEYCLOAK_URL"), "Keycloak base URL [$KEYCLOAK_URL]")
+		realm := fs.String("realm", os.Getenv("KEYCLOAK_REALM"), "Keycloak realm [$KEYCLOAK_REALM]")
+		clientID := fs.String("client-id", envOr("KEYCLOAK_CLIENT_ID", "rbac-keycloak-sync"), "client id [$KEYCLOAK_CLIENT_ID]")
+		clientSecret := fs.String("client-secret", os.Getenv("KEYCLOAK_CLIENT_SECRET"), "client secret [$KEYCLOAK_CLIENT_SECRET]")
+		org := fs.String("org", os.Getenv("SYNC_ORG_ID"), "org_id [$SYNC_ORG_ID]")
+		group := fs.String("group", envOr("SYNC_GROUP", "CI Test Admin"), "tenant group for synced users [$SYNC_GROUP]")
+		prune := fs.Bool("prune-orphans", envBool("SYNC_PRUNE_ORPHANS", true), "delete principals gone from Keycloak [$SYNC_PRUNE_ORPHANS]")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
 		if *keycloakURL == "" || *realm == "" || *org == "" {
-			return fmt.Errorf("sync requires --keycloak-url, --realm and --org")
+			return fmt.Errorf("sync requires --keycloak-url, --realm and --org (or KEYCLOAK_URL/KEYCLOAK_REALM/SYNC_ORG_ID env)")
 		}
 		db, err := open()
 		if err != nil {
