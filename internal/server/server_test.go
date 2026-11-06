@@ -828,3 +828,103 @@ func TestCreateGroup(t *testing.T) {
 		t.Errorf("reserved name: status = %d body %s, want 400 + reserved", code, body)
 	}
 }
+
+// createGroup posts a group and returns its uuid.
+func createGroup(t *testing.T, s *Server, header, name string) string {
+	t.Helper()
+	body := `{"name":"` + name + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/rbac/v1/groups/", strings.NewReader(body))
+	req.Header.Set("X-Rh-Identity", header)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup POST group: status = %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	return created.UUID
+}
+
+// TestUpdateGroup: PUT renames + re-describes a custom group.
+func TestUpdateGroup(t *testing.T) {
+	s, header := testServerSeeded(t)
+	uuid := createGroup(t, s, header, "team-rename")
+
+	req := httptest.NewRequest(http.MethodPut, "/api/rbac/v1/groups/"+uuid+"/",
+		strings.NewReader(`{"name":"team-renamed","description":"new desc"}`))
+	req.Header.Set("X-Rh-Identity", header)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	var updated struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != "team-renamed" || updated.Description != "new desc" {
+		t.Errorf("updated = %+v, want renamed + new desc", updated)
+	}
+}
+
+// TestDeleteGroup: custom groups delete (204, then 404); platform_default and
+// admin_default groups are protected like Django's protect_special_groups.
+func TestDeleteGroup(t *testing.T) {
+	s, header := testServerSeeded(t)
+	db := s.db
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO groups(uuid, name, platform_default, tenant_id) VALUES('g-pd','Default access',1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO groups(uuid, name, admin_default, tenant_id) VALUES('g-ad','Admin default',1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	uuid := createGroup(t, s, header, "team-gone")
+
+	doDelete := func(id string) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodDelete, "/api/rbac/v1/groups/"+id+"/", nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := doDelete(uuid); code != http.StatusNoContent {
+		t.Errorf("custom delete: status = %d, want 204", code)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+uuid+"/", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("detail after delete: status = %d, want 404", rec.Code)
+	}
+	for id, kind := range map[string]string{"g-pd": "platform_default", "g-ad": "admin_default"} {
+		if code := doDelete(id); code != http.StatusBadRequest {
+			t.Errorf("delete %s: status = %d, want 400", kind, code)
+		}
+		if code := func() int {
+			req := httptest.NewRequest(http.MethodPut, "/api/rbac/v1/groups/"+id+"/",
+				strings.NewReader(`{"name":"hacked"}`))
+			req.Header.Set("X-Rh-Identity", header)
+			req.Header.Set("Content-Type", "application/json")
+			r := httptest.NewRecorder()
+			s.ServeHTTP(r, req)
+			return r.Code
+		}(); code != http.StatusBadRequest {
+			t.Errorf("rename %s: status = %d, want 400", kind, code)
+		}
+	}
+}
