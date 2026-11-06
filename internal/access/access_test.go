@@ -164,3 +164,43 @@ func TestGetAccessExactMatchOnly(t *testing.T) {
 		t.Errorf("got = %v, want [cost-management:aws.account:read]", got)
 	}
 }
+
+// TestGetAccessIncludesPublicPlatformDefault mirrors Django's
+// default_group_set: the public tenant "Default access" platform-default
+// group grants apply to every tenant (e.g. rbac:principal:read for gateway
+// tests, base viewer roles on-prem).
+func TestGetAccessIncludesPublicPlatformDefault(t *testing.T) {
+	db := testDB(t)
+	seedFixture(t, db)
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.Exec(q, args...); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
+		VALUES('rbac','principal','read','rbac:principal:read',
+		(SELECT id FROM tenants WHERE org_id='public'))`)
+	exec(`INSERT INTO roles(uuid, name, system, platform_default, tenant_id) VALUES('r-pub','Viewer',1,1,
+		(SELECT id FROM tenants WHERE org_id='public'))`)
+	exec(`INSERT INTO access(role_id, permission_id, tenant_id) VALUES(
+		(SELECT id FROM roles WHERE uuid='r-pub'),
+		(SELECT id FROM permissions WHERE permission='rbac:principal:read'),
+		(SELECT id FROM tenants WHERE org_id='public'))`)
+	exec(`INSERT INTO groups(uuid, name, platform_default, tenant_id) VALUES('g-pub','Default access',1,
+		(SELECT id FROM tenants WHERE org_id='public'))`)
+	exec(`INSERT INTO policies(uuid, name, group_id, tenant_id) VALUES('pol-pub','Default access Policy',
+		(SELECT id FROM groups WHERE uuid='g-pub'),
+		(SELECT id FROM tenants WHERE org_id='public'))`)
+	exec(`INSERT INTO policy_roles(policy_id, role_id) VALUES(
+		(SELECT id FROM policies WHERE uuid='pol-pub'),
+		(SELECT id FROM roles WHERE uuid='r-pub'))`)
+
+	got, err := Query(db, "100001", "test_user", []string{"rbac"})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(got) != 1 || got[0].Permission != "rbac:principal:read" {
+		t.Errorf("got = %+v, want [rbac:principal:read] via public Default access", got)
+	}
+}
