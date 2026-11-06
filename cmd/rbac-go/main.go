@@ -18,6 +18,7 @@ import (
 	"os"
 	"strings"
 
+	"rbac-go/internal/keycloak"
 	"rbac-go/internal/seed"
 	"rbac-go/internal/server"
 	"rbac-go/internal/store"
@@ -87,8 +88,33 @@ func run(args []string, databaseURL string) error {
 		}
 		defer db.Close()
 		return seed.Bootstrap(db, *org, *account, strings.Split(*users, ","))
+	case "sync":
+		fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+		keycloakURL := fs.String("keycloak-url", "", "Keycloak base URL")
+		realm := fs.String("realm", "", "Keycloak realm")
+		clientID := fs.String("client-id", "rbac-keycloak-sync", "client id")
+		clientSecret := fs.String("client-secret", "", "client secret")
+		org := fs.String("org", "", "org_id")
+		group := fs.String("group", "CI Test Admin", "tenant group for synced users")
+		prune := fs.Bool("prune-orphans", true, "delete principals gone from Keycloak")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if *keycloakURL == "" || *realm == "" || *org == "" {
+			return fmt.Errorf("sync requires --keycloak-url, --realm and --org")
+		}
+		db, err := open()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return keycloak.Sync(db, keycloak.Config{
+			BaseURL: *keycloakURL, Realm: *realm,
+			ClientID: *clientID, ClientSecret: *clientSecret,
+			OrgID: *org, Group: *group, PruneOrphans: *prune,
+		})
 	default:
-		return fmt.Errorf("unknown command %q (serve|migrate|seed|bootstrap)", cmd)
+		return fmt.Errorf("unknown command %q (serve|migrate|seed|bootstrap|sync)", cmd)
 	}
 }
 
