@@ -57,6 +57,26 @@ func testDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestGetAccessUnknownPrincipalEmpty(t *testing.T) {
+	db := testDB(t)
+	seedFixture(t, db)
+
+	// Unknown user in a known tenant, and known user in an unknown tenant:
+	// both yield [] with no error (koku maps empty access to deny).
+	for name, pair := range map[string][2]string{
+		"unknown user":   {"100001", "nobody-unassigned"},
+		"unknown tenant": {"999999", "test_user"},
+	} {
+		got, err := Query(db, pair[0], pair[1], []string{"app"})
+		if err != nil {
+			t.Fatalf("%s: Query returned error: %v", name, err)
+		}
+		if len(got) != 0 {
+			t.Errorf("%s: len(access) = %d, want 0", name, len(got))
+		}
+	}
+}
+
 func TestGetAccessSuccess(t *testing.T) {
 	db := testDB(t)
 	seedFixture(t, db)
