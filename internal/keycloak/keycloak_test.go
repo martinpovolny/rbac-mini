@@ -97,3 +97,65 @@ func TestSyncUpsertsAndPrunes(t *testing.T) {
 		t.Errorf("bob in group count = %d, want 1", bobInGroup)
 	}
 }
+
+// stubKeycloakGroups emulates group discovery: one org- group with attributes
+// plus its members endpoint (mirrors sync_keycloak_principals.py).
+func stubKeycloakGroups(t *testing.T, members []string) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/realms/onprem/protocol/openid-connect/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "test-token"})
+	})
+	mux.HandleFunc("/admin/realms/onprem/groups", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"id":   "g1",
+			"name": "org-100001",
+			"attributes": map[string]any{
+				"org_id":         []string{"100001"},
+				"account_number": []string{"1111111"},
+			},
+		}})
+	})
+	mux.HandleFunc("/admin/realms/onprem/groups/g1/members", func(w http.ResponseWriter, r *http.Request) {
+		out := make([]map[string]any, 0, len(members))
+		for _, u := range members {
+			out = append(out, map[string]any{"username": u, "enabled": true})
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	return httptest.NewServer(mux)
+}
+
+// TestSyncDiscoversOrgs: without --org, sync discovers org- groups, creates
+// the tenant, and syncs principals with no group assignment (platform/admin
+// defaults grant access, as in the Django script).
+func TestSyncDiscoversOrgs(t *testing.T) {
+	db := testdb.Open(t)
+	if err := seed.Seed(db); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+	srv := stubKeycloakGroups(t, []string{"alice", "bob"})
+	defer srv.Close()
+
+	err := Sync(db, Config{
+		BaseURL: srv.URL, Realm: "onprem",
+		ClientID: "rbac-keycloak-sync", ClientSecret: "s3cret",
+		OrgGroupPrefix: "org-", PruneOrphans: true,
+	})
+	if err != nil {
+		t.Fatalf("discovery Sync returned error: %v", err)
+	}
+	var tenant string
+	var ready int
+	if err := db.QueryRow(`SELECT tenant_name, ready FROM tenants WHERE org_id='100001'`).Scan(&tenant, &ready); err != nil {
+		t.Fatalf("tenant missing: %v", err)
+	}
+	for _, u := range []string{"alice", "bob"} {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM principals pr
+			JOIN tenants t ON t.id = pr.tenant_id
+			WHERE t.org_id='100001' AND pr.username=?`, u).Scan(&n); err != nil || n != 1 {
+			t.Errorf("principal %q count = %d, err = %v, want 1", u, n, err)
+		}
+	}
+}
