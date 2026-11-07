@@ -49,11 +49,13 @@ func seedAccess(t *testing.T, db *store.DB) {
 	}
 	exec(`INSERT INTO tenants(org_id, tenant_name, account_id, ready) VALUES('100001','acct1111111','1111111',1)`)
 	exec(`INSERT INTO principals(uuid, username, tenant_id) VALUES('pu-test','test_user',(SELECT id FROM tenants WHERE org_id='100001'))`)
-	exec(`INSERT INTO groups(uuid, name, tenant_id) VALUES('g-a','groupA',(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO groups(uuid, name, modified, tenant_id) VALUES('g-a','groupA','2024-01-01T00:00:00Z',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
 	exec(`INSERT INTO group_principals(group_id, principal_id) VALUES(
 		(SELECT id FROM groups WHERE uuid='g-a'),
 		(SELECT id FROM principals WHERE uuid='pu-test'))`)
-	exec(`INSERT INTO roles(uuid, name, tenant_id) VALUES('r-a','roleA',(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO roles(uuid, name, modified, tenant_id) VALUES('r-a','roleA','2024-01-01T00:00:00Z',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
 	exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
 		VALUES('app','*','*','app:*:*',(SELECT id FROM tenants WHERE org_id='100001'))`)
 	exec(`INSERT INTO access(role_id, permission_id, tenant_id) VALUES(
@@ -671,8 +673,9 @@ func TestRolesList(t *testing.T) {
 			Count int `json:"count"`
 		} `json:"meta"`
 		Data []struct {
-			UUID string `json:"uuid"`
-			Name string `json:"name"`
+			UUID     string `json:"uuid"`
+			Name     string `json:"name"`
+			Modified string `json:"modified"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
@@ -683,6 +686,9 @@ func TestRolesList(t *testing.T) {
 	}
 	found := false
 	for _, r := range body.Data {
+		if r.Modified == "" {
+			t.Errorf("role %q has no modified timestamp", r.Name)
+		}
 		if r.Name == "roleA" && r.UUID != "" {
 			found = true
 		}
@@ -753,7 +759,7 @@ func TestRolesListNameFilters(t *testing.T) {
 	}
 
 	for _, query := range []string{
-		"?name=x&name_match=bogus", "?system=maybe", "?order_by=modified",
+		"?name=x&name_match=bogus", "?system=maybe", "?order_by=bogus",
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/"+query, nil)
 		req.Header.Set("X-Rh-Identity", header)
@@ -945,6 +951,7 @@ func TestGroupsList(t *testing.T) {
 		Data []struct {
 			UUID           string `json:"uuid"`
 			Name           string `json:"name"`
+			Modified       string `json:"modified"`
 			PrincipalCount int    `json:"principalCount"`
 			RoleCount      int    `json:"roleCount"`
 		} `json:"data"`
@@ -959,6 +966,9 @@ func TestGroupsList(t *testing.T) {
 	if g.Name != "groupA" || g.PrincipalCount != 1 || g.RoleCount != 1 {
 		t.Errorf("group = %+v, want groupA with 1 principal and 1 role", g)
 	}
+	if g.Modified == "" {
+		t.Errorf("group %q has no modified timestamp", g.Name)
+	}
 }
 
 // TestGroupsListNameFilter: the create wizard checks availability with
@@ -972,11 +982,11 @@ func TestGroupsListNameFilter(t *testing.T) {
 			t.Fatalf("seed %q: %v", q, err)
 		}
 	}
-	exec(`INSERT INTO groups(uuid, name, tenant_id) VALUES('g-two','test-group-two',
+	exec(`INSERT INTO groups(uuid, name, modified, tenant_id) VALUES('g-two','test-group-two','2024-01-03T00:00:00Z',
 		(SELECT id FROM tenants WHERE org_id='100001'))`)
-	exec(`INSERT INTO groups(uuid, name, admin_default, system, tenant_id) VALUES('g-ad','Default admin access',1,1,
+	exec(`INSERT INTO groups(uuid, name, admin_default, system, modified, tenant_id) VALUES('g-ad','Default admin access',1,1,'2024-01-02T00:00:00Z',
 		(SELECT id FROM tenants WHERE org_id='100001'))`)
-	exec(`INSERT INTO groups(uuid, name, platform_default, system, tenant_id) VALUES('g-pd','Default access',1,1,
+	exec(`INSERT INTO groups(uuid, name, platform_default, system, modified, tenant_id) VALUES('g-pd','Default access',1,1,'2024-01-02T00:00:00Z',
 		(SELECT id FROM tenants WHERE org_id='100001'))`)
 
 	cases := []struct {
@@ -994,6 +1004,7 @@ func TestGroupsListNameFilter(t *testing.T) {
 		{"admin default probe", "?limit=1&admin_default=true", []string{"Default admin access"}},
 		{"platform default probe", "?limit=1&platform_default=true", []string{"Default access"}},
 		{"system false", "?system=false", []string{"groupA", "test-group-two"}},
+		{"modified desc", "?order_by=-modified", []string{"test-group-two", "groupA"}},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+tc.query, nil)
@@ -1026,6 +1037,7 @@ func TestGroupsListNameFilter(t *testing.T) {
 
 	for _, query := range []string{
 		"?name=x&name_match=bogus", "?platform_default=maybe", "?admin_default=1", "?system=yes",
+		"?order_by=bogus",
 	} {
 		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+query, nil)
 		req.Header.Set("X-Rh-Identity", header)

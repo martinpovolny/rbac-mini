@@ -17,6 +17,7 @@ type Role struct {
 	DisplayName string         `json:"display_name"`
 	Description string         `json:"description,omitempty"`
 	System      bool           `json:"system"`
+	Modified    string         `json:"modified"`
 	Access      []access.Entry `json:"access,omitempty"`
 	PolicyCount int            `json:"policyCount,omitempty"`
 }
@@ -98,9 +99,9 @@ func Create(db *store.DB, orgID, name, displayName, description string, grants [
 	if err := tx.QueryRow(`SELECT id FROM tenants WHERE org_id=?`, orgID).Scan(&tenantID); err != nil {
 		return Role{}, err
 	}
-	if _, err := tx.Exec(`INSERT INTO roles(uuid, name, display_name, description, tenant_id)
-		VALUES(?, ?, ?, ?, ?) ON CONFLICT(name, tenant_id) DO NOTHING`,
-		uuid, name, displayName, description, tenantID); err != nil {
+	if _, err := tx.Exec(`INSERT INTO roles(uuid, name, display_name, description, modified, tenant_id)
+		VALUES(?, ?, ?, ?, ?, ?) ON CONFLICT(name, tenant_id) DO NOTHING`,
+		uuid, name, displayName, description, store.Now(), tenantID); err != nil {
 		return Role{}, err
 	}
 	var roleID int64
@@ -185,6 +186,8 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Role
 	case "", "name":
 	case "display_name":
 		order = "LOWER(r.display_name)"
+	case "modified":
+		order = "r.modified"
 	case "policyCount":
 		order = `(SELECT COUNT(DISTINCT pol.id) FROM policy_roles prl
 			JOIN policies pol ON pol.id = prl.policy_id WHERE prl.role_id = r.id)`
@@ -199,7 +202,8 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Role
 		JOIN tenants t ON t.id = r.tenant_id WHERE`+where, args...).Scan(&count); err != nil {
 		return nil, 0, err
 	}
-	q := `SELECT r.uuid, r.name, r.display_name, COALESCE(r.description,''), r.system
+	q := `SELECT r.uuid, r.name, r.display_name, COALESCE(r.description,''), r.system,
+		COALESCE(r.modified,'')
 		FROM roles r JOIN tenants t ON t.id = r.tenant_id
 		WHERE` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -213,7 +217,7 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Role
 		var r Role
 		var system int
 		var desc string
-		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &desc, &system); err != nil {
+		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &desc, &system, &r.Modified); err != nil {
 			return nil, 0, err
 		}
 		if desc != "" {
@@ -231,10 +235,10 @@ func Get(db *store.DB, orgID, uuid string) (Role, error) {
 	var system int
 	var tenantID int64
 	err := db.QueryRow(`SELECT r.uuid, r.name, r.display_name,
-			COALESCE(r.description,''), r.system, r.tenant_id
+			COALESCE(r.description,''), r.system, COALESCE(r.modified,''), r.tenant_id
 		FROM roles r JOIN tenants t ON t.id = r.tenant_id
 		WHERE r.uuid = ? AND (t.org_id = ? OR t.tenant_name = 'public')`,
-		uuid, orgID).Scan(&r.UUID, &r.Name, &r.DisplayName, &r.Description, &system, &tenantID)
+		uuid, orgID).Scan(&r.UUID, &r.Name, &r.DisplayName, &r.Description, &system, &r.Modified, &tenantID)
 	if err != nil {
 		return Role{}, err
 	}
@@ -388,8 +392,8 @@ func Update(db *store.DB, orgID, uuid, name, displayName, description string, gr
 	if displayName == "" {
 		displayName = name
 	}
-	if _, err := tx.Exec(`UPDATE roles SET name=?, display_name=?, description=? WHERE id=?`,
-		name, displayName, description, roleID); err != nil {
+	if _, err := tx.Exec(`UPDATE roles SET name=?, display_name=?, description=?, modified=? WHERE id=?`,
+		name, displayName, description, store.Now(), roleID); err != nil {
 		return Role{}, err
 	}
 	if err := replaceAccess(tx, tenantID, roleID, resolved); err != nil {
@@ -429,6 +433,9 @@ func Patch(db *store.DB, orgID, uuid string, fields map[string]string) (Role, er
 		if _, err := tx.Exec(fmt.Sprintf("UPDATE roles SET %s=? WHERE id=?", col), v, roleID); err != nil {
 			return Role{}, err
 		}
+	}
+	if _, err := tx.Exec(`UPDATE roles SET modified=? WHERE id=?`, store.Now(), roleID); err != nil {
+		return Role{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return Role{}, err

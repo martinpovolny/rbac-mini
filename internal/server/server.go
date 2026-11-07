@@ -656,7 +656,7 @@ func (s *Server) handleRolesList(w http.ResponseWriter, r *http.Request) {
 	}
 	switch orderBy {
 	case "", "name":
-	case "display_name", "policyCount":
+	case "display_name", "policyCount", "modified":
 		filter.OrderBy = orderBy
 	default:
 		writeError(w, http.StatusBadRequest, "invalid order_by")
@@ -1198,6 +1198,19 @@ func (s *Server) handleGroupsList(w http.ResponseWriter, r *http.Request) {
 	}
 	if filter.System, err = queryBoolPtr(q, "system"); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	orderBy := q.Get("order_by")
+	if strings.HasPrefix(orderBy, "-") {
+		filter.Desc = true
+		orderBy = strings.TrimPrefix(orderBy, "-")
+	}
+	switch orderBy {
+	case "", "name":
+	case "modified", "principalCount", "policyCount":
+		filter.OrderBy = orderBy
+	default:
+		writeError(w, http.StatusBadRequest, "invalid order_by")
 		return
 	}
 	items, total, err := group.List(s.db, user.OrgID, filter, limit, offset)

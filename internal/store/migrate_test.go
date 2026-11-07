@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // oldPrincipals is the principals DDL shipped before the profile columns.
 const oldPrincipals = `
@@ -15,6 +18,71 @@ CREATE TABLE principals (
   tenant_id INTEGER NOT NULL,
   UNIQUE (username, tenant_id)
 )`
+
+// oldCatalogTables are the roles/groups DDL shipped before the modified
+// column existed.
+const oldCatalogTables = `
+CREATE TABLE roles (
+  id INTEGER PRIMARY KEY,
+  uuid TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
+  description TEXT,
+  system INTEGER NOT NULL DEFAULT 0,
+  platform_default INTEGER NOT NULL DEFAULT 0,
+  admin_default INTEGER NOT NULL DEFAULT 0,
+  tenant_id INTEGER NOT NULL,
+  UNIQUE (name, tenant_id)
+);
+CREATE TABLE groups (
+  id INTEGER PRIMARY KEY,
+  uuid TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT,
+  platform_default INTEGER NOT NULL DEFAULT 0,
+  system INTEGER NOT NULL DEFAULT 0,
+  admin_default INTEGER NOT NULL DEFAULT 0,
+  tenant_id INTEGER NOT NULL,
+  UNIQUE (name, tenant_id)
+)`
+
+// TestMigrateBackfillsModified: rows created before the "Last modified"
+// column existed must get a usable timestamp instead of "Invalid date".
+func TestMigrateBackfillsModified(t *testing.T) {
+	db, err := OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(oldCatalogTables); err != nil {
+		t.Fatalf("old schema: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO roles(uuid, name, tenant_id) VALUES('r-old','role-old',7)`); err != nil {
+		t.Fatalf("old role: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO groups(uuid, name, tenant_id) VALUES('g-old','group-old',7)`); err != nil {
+		t.Fatalf("old group: %v", err)
+	}
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	for _, q := range []string{
+		`SELECT modified FROM roles WHERE uuid='r-old'`,
+		`SELECT modified FROM groups WHERE uuid='g-old'`,
+	} {
+		var modified string
+		if err := db.QueryRow(q).Scan(&modified); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if modified == "" {
+			t.Errorf("%s: modified backfill is empty", q)
+		}
+		if _, err := time.Parse(time.RFC3339, modified); err != nil {
+			t.Errorf("%s: modified = %q, not RFC3339: %v", q, modified, err)
+		}
+	}
+}
 
 // TestMigrateBackfillsPrincipalProfiles: a database created by an older
 // rbac-go must gain the profile columns with active principals, so an

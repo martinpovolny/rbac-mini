@@ -20,6 +20,7 @@ type Group struct {
 	PlatformDefault bool   `json:"platform_default"`
 	AdminDefault    bool   `json:"admin_default"`
 	System          bool   `json:"system"`
+	Modified        string `json:"modified"`
 }
 
 // Filter mirrors the v1 group list query parameters the on-prem UI uses
@@ -32,6 +33,9 @@ type Filter struct {
 	PlatformDefault *bool
 	AdminDefault    *bool
 	System          *bool
+	// OrderBy is "name" (default), "modified", "principalCount" or "policyCount".
+	OrderBy string
+	Desc    bool
 }
 
 // List returns tenant groups ordered by name. Like Django's
@@ -82,14 +86,27 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Grou
 	if err := db.QueryRow(`SELECT COUNT(*) FROM groups g WHERE `+where, args...).Scan(&count); err != nil {
 		return nil, 0, err
 	}
+	order := "LOWER(g.name)"
+	switch f.OrderBy {
+	case "", "name":
+	case "modified":
+		order = "g.modified"
+	case "principalCount":
+		order = `(SELECT COUNT(*) FROM group_principals WHERE group_id = g.id)`
+	case "policyCount":
+		order = `(SELECT COUNT(*) FROM policies pol WHERE pol.group_id = g.id)`
+	}
+	if f.Desc {
+		order += " DESC"
+	}
 	q := `SELECT g.uuid, g.name, COALESCE(g.description,''),
 		(SELECT COUNT(*) FROM group_principals WHERE group_id = g.id),
 		(SELECT COUNT(DISTINCT r.id) FROM policies pol
 			JOIN policy_roles pr ON pr.policy_id = pol.id
 			JOIN roles r ON r.id = pr.role_id
 			WHERE pol.group_id = g.id),
-		g.platform_default, g.admin_default, g.system
-		FROM groups g WHERE ` + where + ` ORDER BY g.name LIMIT ? OFFSET ?`
+		g.platform_default, g.admin_default, g.system, COALESCE(g.modified,'')
+		FROM groups g WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := db.Query(q, args...)
 	if err != nil {
@@ -101,7 +118,8 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Grou
 		var g Group
 		var desc string
 		var pd, ad, sys int
-		if err := rows.Scan(&g.UUID, &g.Name, &desc, &g.PrincipalCount, &g.RoleCount, &pd, &ad, &sys); err != nil {
+		if err := rows.Scan(&g.UUID, &g.Name, &desc, &g.PrincipalCount, &g.RoleCount,
+			&pd, &ad, &sys, &g.Modified); err != nil {
 			return nil, 0, err
 		}
 		g.Description = desc
@@ -309,9 +327,9 @@ func Create(db *store.DB, orgID, name, description string) (Group, error) {
 		return Group{}, ErrReservedName{Name: name}
 	}
 	uuid := store.NewUUID()
-	_, err := db.Exec(`INSERT INTO groups(uuid, name, description, tenant_id)
-		VALUES(?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
-		uuid, name, description, orgID)
+	_, err := db.Exec(`INSERT INTO groups(uuid, name, description, modified, tenant_id)
+		VALUES(?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
+		uuid, name, description, store.Now(), orgID)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return Group{}, ErrDuplicate{Name: name}
@@ -454,11 +472,13 @@ func Update(db *store.DB, orgID, uuid, name, description string, setDescription 
 		return Group{}, fmt.Errorf("default admin access cannot be modified")
 	}
 	if setDescription {
-		if _, err := db.Exec(`UPDATE groups SET name=?, description=? WHERE id=?`, name, description, id); err != nil {
+		if _, err := db.Exec(`UPDATE groups SET name=?, description=?, modified=? WHERE id=?`,
+			name, description, store.Now(), id); err != nil {
 			return Group{}, mapUnique(err, name)
 		}
 	} else {
-		if _, err := db.Exec(`UPDATE groups SET name=? WHERE id=?`, name, id); err != nil {
+		if _, err := db.Exec(`UPDATE groups SET name=?, modified=? WHERE id=?`,
+			name, store.Now(), id); err != nil {
 			return Group{}, mapUnique(err, name)
 		}
 	}
@@ -502,10 +522,11 @@ func Get(db *store.DB, orgID, uuid string) (Group, error) {
 			JOIN policy_roles pr ON pr.policy_id = pol.id
 			JOIN roles r ON r.id = pr.role_id
 			WHERE pol.group_id = g.id),
-		g.platform_default, g.admin_default, g.system
+		g.platform_default, g.admin_default, g.system, COALESCE(g.modified,'')
 		FROM groups g JOIN tenants t ON t.id = g.tenant_id
 		WHERE g.uuid = ? AND t.org_id = ?`,
-		uuid, orgID).Scan(&g.UUID, &g.Name, &desc, &g.PrincipalCount, &g.RoleCount, &pd, &ad, &sys)
+		uuid, orgID).Scan(&g.UUID, &g.Name, &desc, &g.PrincipalCount, &g.RoleCount,
+		&pd, &ad, &sys, &g.Modified)
 	if err != nil {
 		return Group{}, err
 	}

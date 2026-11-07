@@ -11,6 +11,15 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// TimestampLayout is fixed-width so TEXT columns sort chronologically on both
+// SQLite and Postgres. time.Parse(time.RFC3339, ...) reads it.
+const TimestampLayout = "2006-01-02T15:04:05.000000000Z"
+
+// Now returns the UTC timestamp format stored in TEXT columns.
+func Now() string {
+	return time.Now().UTC().Format(TimestampLayout)
+}
+
 // NewUUID returns a random v4 UUID string (DB stores UUIDs as TEXT).
 func NewUUID() string {
 	var b [16]byte
@@ -66,6 +75,7 @@ CREATE TABLE IF NOT EXISTS groups (
   platform_default INTEGER NOT NULL DEFAULT 0,
   system INTEGER NOT NULL DEFAULT 0,
   admin_default INTEGER NOT NULL DEFAULT 0,
+  modified TEXT,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   UNIQUE (name, tenant_id)
 );
@@ -78,6 +88,7 @@ CREATE TABLE IF NOT EXISTS roles (
   system INTEGER NOT NULL DEFAULT 0,
   platform_default INTEGER NOT NULL DEFAULT 0,
   admin_default INTEGER NOT NULL DEFAULT 0,
+  modified TEXT,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   UNIQUE (name, tenant_id)
 );
@@ -251,9 +262,16 @@ func Migrate(db *DB) error {
 		`ALTER TABLE principals ADD COLUMN last_name TEXT`,
 		`ALTER TABLE principals ADD COLUMN is_org_admin INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE principals ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`,
+		// "Last modified" in the RBAC UI (groups, roles, user roles).
+		`ALTER TABLE roles ADD COLUMN modified TEXT`,
+		`ALTER TABLE groups ADD COLUMN modified TEXT`,
 	}
 	for _, stmt := range backfills {
 		_, _ = db.Exec(stmt)
+	}
+	now := Now()
+	for _, table := range []string{"roles", "groups"} {
+		_, _ = db.Exec(`UPDATE `+table+` SET modified=? WHERE modified IS NULL OR modified=''`, now)
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package role
 
 import (
 	"testing"
+	"time"
 
 	"rbac-go/internal/store"
 	"rbac-go/internal/testdb"
@@ -18,24 +19,24 @@ func seedRoles(t *testing.T, db *store.DB) {
 		}
 	}
 	roles := []struct {
-		OrgID, Name, DisplayName string
-		System                   bool
+		OrgID, Name, DisplayName, Modified string
+		System                             bool
 	}{
-		{"public", "Cost Administrator", "Cost administrator", true},
-		{"public", "Sources administrator", "Cloud administrator", true},
-		{"100001", "test-role", "Test Role", false},
-		{"100001", "test-role-2", "Second Test", false},
-		{"100001", "other-role", "Display Name A", false},
-		{"200002", "tenant-two-role", "Tenant Two", false},
+		{"public", "Cost Administrator", "Cost administrator", "2024-01-01T00:00:00Z", true},
+		{"public", "Sources administrator", "Cloud administrator", "2024-01-02T00:00:00Z", true},
+		{"100001", "test-role", "Test Role", "2024-01-03T00:00:00Z", false},
+		{"100001", "test-role-2", "Second Test", "2024-01-05T00:00:00Z", false},
+		{"100001", "other-role", "Display Name A", "2024-01-04T00:00:00Z", false},
+		{"200002", "tenant-two-role", "Tenant Two", "2024-01-06T00:00:00Z", false},
 	}
 	for _, r := range roles {
 		system := 0
 		if r.System {
 			system = 1
 		}
-		if _, err := db.Exec(`INSERT INTO roles(uuid, name, display_name, system, tenant_id)
-			VALUES(?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
-			store.NewUUID(), r.Name, r.DisplayName, system, r.OrgID); err != nil {
+		if _, err := db.Exec(`INSERT INTO roles(uuid, name, display_name, system, modified, tenant_id)
+			VALUES(?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
+			store.NewUUID(), r.Name, r.DisplayName, system, r.Modified, r.OrgID); err != nil {
 			t.Fatalf("role %s: %v", r.Name, err)
 		}
 	}
@@ -90,6 +91,65 @@ func TestListNameAndDisplayNameFilters(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+// TestModifiedTimestamps: the UI renders a "Last modified" column from the
+// role's modified field; a missing value shows "Invalid date".
+func TestModifiedTimestamps(t *testing.T) {
+	db := testdb.Open(t)
+	seedRoles(t, db)
+
+	items, _, err := List(db, "100001", Filter{}, 20, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, item := range items {
+		if item.Modified == "" {
+			t.Errorf("role %q has no modified timestamp", item.Name)
+			continue
+		}
+		if _, err := time.Parse(time.RFC3339, item.Modified); err != nil {
+			t.Errorf("role %q modified = %q, not RFC3339: %v", item.Name, item.Modified, err)
+		}
+	}
+
+	items, total, err := List(db, "100001", Filter{OrderBy: "modified", Desc: true}, 20, 0)
+	if err != nil {
+		t.Fatalf("List by modified: %v", err)
+	}
+	if total != 5 || len(items) != 5 {
+		t.Fatalf("roles = %v (total %d), want 5", names(items), total)
+	}
+	if items[0].Name != "test-role-2" || items[len(items)-1].Name != "Cost Administrator" {
+		t.Errorf("modified desc order = %v", names(items))
+	}
+
+	var uuid string
+	if err := db.QueryRow(`SELECT uuid FROM roles WHERE name='test-role'`).Scan(&uuid); err != nil {
+		t.Fatalf("uuid: %v", err)
+	}
+	before, err := Get(db, "100001", uuid)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	updated, err := Update(db, "100001", uuid, "test-role", "Test Role", "", nil, nil)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Modified == "" || updated.Modified == before.Modified {
+		t.Errorf("modified after update = %q (before %q), want a new timestamp", updated.Modified, before.Modified)
+	}
+	if _, err := time.Parse(time.RFC3339, updated.Modified); err != nil {
+		t.Errorf("updated modified = %q, not RFC3339: %v", updated.Modified, err)
+	}
+
+	patched, err := Patch(db, "100001", uuid, map[string]string{"description": "changed"})
+	if err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if patched.Modified == updated.Modified {
+		t.Errorf("modified after patch = %q, want a new timestamp", patched.Modified)
 	}
 }
 

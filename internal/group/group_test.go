@@ -2,6 +2,7 @@ package group
 
 import (
 	"testing"
+	"time"
 
 	"rbac-go/internal/store"
 	"rbac-go/internal/testdb"
@@ -18,16 +19,16 @@ func seedGroups(t *testing.T, db *store.DB) {
 		t.Fatalf("tenant: %v", err)
 	}
 	groups := []struct {
-		OrgID, Name string
-		Platform    bool
-		Admin       bool
+		OrgID, Name, Modified string
+		Platform              bool
+		Admin                 bool
 	}{
-		{"100001", "Default access", true, false},
-		{"100001", "Default admin access", false, true},
-		{"100001", "test-group-one", false, false},
-		{"100001", "test-group-two", false, false},
-		{"100001", "Other Group", false, false},
-		{"200002", "test-group-other", false, false},
+		{"100001", "Default access", "2024-01-01T00:00:00Z", true, false},
+		{"100001", "Default admin access", "2024-01-02T00:00:00Z", false, true},
+		{"100001", "test-group-one", "2024-01-03T00:00:00Z", false, false},
+		{"100001", "test-group-two", "2024-01-04T00:00:00Z", false, false},
+		{"100001", "Other Group", "2024-01-05T00:00:00Z", false, false},
+		{"200002", "test-group-other", "2024-01-06T00:00:00Z", false, false},
 	}
 	for _, g := range groups {
 		platform, admin := 0, 0
@@ -41,9 +42,9 @@ func seedGroups(t *testing.T, db *store.DB) {
 		if g.Platform || g.Admin {
 			system = 1
 		}
-		if _, err := db.Exec(`INSERT INTO groups(uuid, name, platform_default, admin_default, system, tenant_id)
-			VALUES(?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
-			store.NewUUID(), g.Name, platform, admin, system, g.OrgID); err != nil {
+		if _, err := db.Exec(`INSERT INTO groups(uuid, name, platform_default, admin_default, system, modified, tenant_id)
+			VALUES(?, ?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
+			store.NewUUID(), g.Name, platform, admin, system, g.Modified, g.OrgID); err != nil {
 			t.Fatalf("group %s: %v", g.Name, err)
 		}
 	}
@@ -128,6 +129,61 @@ func TestListNameFilter(t *testing.T) {
 	}
 	if total != 2 || len(items) != 1 || items[0].Name != "test-group-two" {
 		t.Errorf("paged = %v (total %d), want [test-group-two]", names(items), total)
+	}
+}
+
+// TestModifiedTimestamps: the Groups table renders "Last modified" from this
+// field; without it every row shows a dash.
+func TestModifiedTimestamps(t *testing.T) {
+	db := testdb.Open(t)
+	seedGroups(t, db)
+
+	items, _, err := List(db, "100001", Filter{}, 20, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, item := range items {
+		if item.Modified == "" {
+			t.Errorf("group %q has no modified timestamp", item.Name)
+			continue
+		}
+		if _, err := time.Parse(time.RFC3339, item.Modified); err != nil {
+			t.Errorf("group %q modified = %q, not RFC3339: %v", item.Name, item.Modified, err)
+		}
+	}
+
+	items, total, err := List(db, "100001", Filter{OrderBy: "modified", Desc: true}, 20, 0)
+	if err != nil {
+		t.Fatalf("List by modified: %v", err)
+	}
+	if total != 3 || len(items) != 3 {
+		t.Fatalf("groups = %v (total %d), want 3 custom groups", names(items), total)
+	}
+	if items[0].Name != "Other Group" || items[1].Name != "test-group-two" || items[2].Name != "test-group-one" {
+		t.Errorf("modified desc order = %v", names(items))
+	}
+
+	created, err := Create(db, "100001", "typed-group", "desc")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := time.Parse(time.RFC3339, created.Modified); err != nil {
+		t.Fatalf("created modified = %q, not RFC3339: %v", created.Modified, err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	updated, err := Update(db, "100001", created.UUID, "typed-group-renamed", "", false)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Modified == "" || updated.Modified == created.Modified {
+		t.Errorf("modified after update = %q (before %q), want a new timestamp", updated.Modified, created.Modified)
+	}
+	got, err := Get(db, "100001", created.UUID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Modified != updated.Modified {
+		t.Errorf("Get modified = %q, want %q", got.Modified, updated.Modified)
 	}
 }
 

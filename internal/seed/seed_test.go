@@ -2,6 +2,7 @@ package seed
 
 import (
 	"testing"
+	"time"
 
 	"rbac-go/internal/access"
 	"rbac-go/internal/store"
@@ -92,6 +93,18 @@ func TestSeedCostAdministrator(t *testing.T) {
 		JOIN policies p ON p.id = pr.policy_id
 		WHERE p.name='Default admin access'`).Scan(&linked); err != nil || linked != 2 {
 		t.Errorf("Default admin access roles = %d, err = %v, want 2", linked, err)
+	}
+	for _, q := range []string{
+		`SELECT modified FROM roles WHERE name='Cost Administrator'`,
+		`SELECT modified FROM groups WHERE name='Default admin access'`,
+	} {
+		var modified string
+		if err := db.QueryRow(q).Scan(&modified); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if _, err := time.Parse(time.RFC3339, modified); err != nil {
+			t.Errorf("%s: modified = %q, not RFC3339: %v", q, modified, err)
+		}
 	}
 
 	// An org admin with no explicit group gets the admin_default grants; a
