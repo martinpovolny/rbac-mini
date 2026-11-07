@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"strings"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
@@ -191,12 +192,26 @@ func OpenSQLite(dsn string) (*DB, error) {
 	return &DB{DB: raw, Driver: DriverSQLite}, nil
 }
 
+// Postgres pool sizing. database/sql keeps only 2 idle connections by default,
+// so at concurrency 20 every burst closed and reopened connections. Keep the
+// idle pool at the open limit so steady traffic reuses connections.
+const (
+	postgresMaxOpenConns    = 25
+	postgresMaxIdleConns    = 25
+	postgresConnMaxIdleTime = 5 * time.Minute
+	postgresConnMaxLifetime = 30 * time.Minute
+)
+
 // OpenPostgres opens a Postgres DB (pgx stdlib, $n placeholders via Rebind).
 func OpenPostgres(dsn string) (*DB, error) {
 	raw, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
 	}
+	raw.SetMaxOpenConns(postgresMaxOpenConns)
+	raw.SetMaxIdleConns(postgresMaxIdleConns)
+	raw.SetConnMaxIdleTime(postgresConnMaxIdleTime)
+	raw.SetConnMaxLifetime(postgresConnMaxLifetime)
 	return &DB{DB: raw, Driver: DriverPostgres}, nil
 }
 
