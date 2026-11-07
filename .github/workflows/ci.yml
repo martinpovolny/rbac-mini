@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      # NOTE: koku-events pins v2.12.2, but that release cannot parse
+      # go1.27 stdlib export data (typecheck fails on every file).
+      # v2.15.0 is the oldest release verified to work here.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build binary
+        run: go build -o /dev/null ./cmd/rbac-go/
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        backend: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rbac_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d rbac_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Run tests (sqlite)
+        if: matrix.backend == 'sqlite'
+        run: go test -race -count=1 -timeout 300s -coverprofile=coverage.out ./...
+
+      - name: Run tests (postgres)
+        if: matrix.backend == 'postgres'
+        env:
+          RBAC_TEST_POSTGRES: postgres://postgres:postgres@localhost:5434/rbac_test?sslmode=disable
+        # testdb creates/drops a database per test, so the bootstrap role
+        # must be a superuser (postgres default is).
+        run: go test -race -count=1 -timeout 300s -coverprofile=coverage.out -p 1 ./...
+
+      - name: Coverage summary
+        run: |
+          echo '### Test Coverage' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out | grep -E 'total:|internal/' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: OpenAPI spec valid
+        run: |
+          pip install openapi-spec-validator -q
+          cd doc && python3 -c "from openapi_spec_validator import validate; import json; validate(json.load(open('openapi.v1-subset.json'))); print('openapi valid')"
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress 'doc/**/*.md' 'README.md'
+          fail: true
+
+  container-build:
+    name: Container Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build container image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: rbac-go:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
