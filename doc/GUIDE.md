@@ -56,10 +56,16 @@ Step by step:
    dict (`aws.account: {read: [...]}`, `cost_model: {read, write}`, OCP
    cluster→node→project inheritance, `*` compaction) that its DRF permission
    classes check (`internal/contract` is our Go port of that mapping).
+   Three koku-side rewrites to know about: `sources:*:*` arrives from RBAC
+   verbatim but is rewritten to `sources:sources:*` *before* bucketing —
+   otherwise the `*` resource type fans out across every bucket;
+   legacy `cost-management:rate:*` means `cost_model`; write implies read.
+   Full rules: `doc/KOKU-NEEDS.md` §2.
 
 ## 2. The data path (one query)
 
-`GET /access/` resolves in a single join (`internal/access`):
+`GET /access/` resolves in a single join (`internal/access`; full schema with
+all tables and FKs: `doc/ERD.md`):
 
 ```mermaid
 flowchart LR
@@ -84,7 +90,7 @@ without this, on-prem loses the public `Default access` grants.
 ## 3. Where the pieces live
 
 * Identity parsing: `internal/identity` (+ `SPEC.md` §4).
-* Join + filters + pagination: `internal/access`.
+* Join + filters + pagination: `internal/access`; schema: `doc/ERD.md`.
 * koku-side folding port (normalize/process/apply, OCP inheritance):
   `internal/contract` — proves our output is consumable by koku's mapping.
 * Tenant/group/principal provisioning: `seed.Bootstrap`, `keycloak.Sync`.
