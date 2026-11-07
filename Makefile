@@ -1,4 +1,4 @@
-.PHONY: test test-sqlite test-postgres build vet fmt
+.PHONY: test test-sqlite test-postgres test-cover build vet fmt lint govulncheck validate-spec
 
 # Scratch Postgres for test-postgres (override to point elsewhere):
 #   initdb -D /tmp/rbac-pg/data -E UTF8 --auth=trust
@@ -23,3 +23,24 @@ vet:
 
 fmt:
 	gofmt -l .
+
+lint:
+	go vet ./...
+	golangci-lint run ./...
+
+govulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+test-cover:
+	go test -race -count=1 -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | tail -5
+
+govulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+test-cover:
+	go test -race -count=1 -coverprofile=coverage.out ./...
+	go tool cover -func=coverage.out | tail -5
+
+validate-spec:
+	python3 -c "from openapi_spec_validator import validate; import json; validate(json.load(open('doc/openapi.v1-subset.json'))); print('openapi valid')"

@@ -3106,6 +3106,154 @@
             }
           }
         ]
+      },
+      "Error403": {
+        "required": [
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "detail": {
+                  "type": "string",
+                  "example": "You do not have permission to perform this action."
+                },
+                "source": {
+                  "type": "string",
+                  "example": "detail"
+                },
+                "status": {
+                  "type": "string",
+                  "example": "403"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ErrorNotFound": {
+        "description": "Error structure for the \"Not Found\" responses.",
+        "required": [
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "detail": {
+                  "description": "Detail of the error.",
+                  "type": "string",
+                  "example": "Not found."
+                },
+                "status": {
+                  "description": "Status of the response",
+                  "type": "string",
+                  "example": "404"
+                },
+                "source": {
+                  "description": "Source of the error.",
+                  "type": "string",
+                  "example": "principals"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServiceAccountInGroupResponse": {
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "links": {
+            "description": "The links object for this particular response will be empty, since there is no pagination available for the query parameter",
+            "type": "object",
+            "example": {}
+          },
+          "data": {
+            "description": "Object which indicates whether the given service account UUIDs in the query parameter are present in the specified group or not",
+            "type": "object",
+            "additionalProperties": {
+              "description": "The response is a map of the form \"UUID\": (true|false)",
+              "type": "boolean"
+            },
+            "example": {
+              "dd946f24-cfda-11ee-acb6-7b2702ff4dc8": true,
+              "3e728bb0-b167-013c-c455-6aa2427b506c": false
+            }
+          }
+        }
+      },
+      "Timestamped": {
+        "type": "object",
+        "required": [
+          "created",
+          "modified"
+        ],
+        "properties": {
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2019-01-21T17:32:28Z"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2019-03-04T07:25:58Z"
+          }
+        }
+      },
+      "UUID": {
+        "type": "object",
+        "required": [
+          "uuid"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "example": "57e60f90-8c0c-4bd1-87a0-2143759aae1c"
+          }
+        }
+      },
+      "AdditionalGroup": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "GroupA"
+          },
+          "description": {
+            "type": "string",
+            "example": "GroupA Description"
+          },
+          "uuid": {
+            "type": "string",
+            "example": "234df936-abb4-4238-a1c9-d91fc540c702"
+          }
+        }
+      },
+      "ServiceAccountIn": {
+        "required": [
+          "type",
+          "clientId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "service-account"
+            ]
+          },
+          "clientId": {
+            "type": "string",
+            "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          }
+        }
       }
     },
     "parameters": {
@@ -3131,6 +3279,75 @@
           "default": 0,
           "minimum": 0
         }
+      },
+      "SystemFilter": {
+        "in": "query",
+        "name": "system",
+        "required": false,
+        "description": "Parameter for filtering resource by system flag.",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "NameMatchCriteria": {
+        "in": "query",
+        "name": "name_match",
+        "required": false,
+        "description": "Parameter for specifying the matching criteria for an object's name or display_name.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "partial",
+            "exact"
+          ]
+        }
+      },
+      "ScopeFilter": {
+        "in": "query",
+        "name": "scope",
+        "required": false,
+        "description": "Parameter for filtering resource by scope.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "org_id",
+            "principal"
+          ],
+          "default": "org_id"
+        }
+      },
+      "NameFilter": {
+        "in": "query",
+        "name": "name",
+        "required": false,
+        "description": "Parameter for filtering resource by name using string contains search.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "requestBodies": {
+      "GroupPrincipalIn": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/GroupPrincipalIn"
+            }
+          }
+        },
+        "description": "Principal to add to a group",
+        "required": true
+      },
+      "GroupRoleIn": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/GroupRoleIn"
+            }
+          }
+        },
+        "description": "Role to add to a group",
+        "required": true
       }
     }
   }
