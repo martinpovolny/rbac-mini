@@ -88,6 +88,74 @@ The Postgres row shows the pool is the cause of the tail, not the container or t
 falls from 23.9 to 3.2 ms with no Docker in the path. The SQLite control is unchanged within
 noise.
 
+## Footprint
+
+What CPU and memory the three serving paths needed while the load test ran. Measured
+with [footprint.sh](../scripts/loadtest/footprint.sh), which samples `docker stats`
+about once a second during the measured runs and wraps the load tool in
+`/usr/bin/time -l`. Raw samples, time reports and the generated
+[FOOTPRINT.md](../scripts/loadtest/results/footprint/FOOTPRINT.md) are committed.
+
+Measurement conditions differ from the baseline on purpose: the request counts per run are
+larger (12000, 30000 and 100000, sized so each run lasts long enough to sample), so this
+stage's latency numbers are not compared with the baseline. Its `ENV.txt` records the same
+Go commit as `go-pool` (`3abc329`, clean tree for the Go code).
+
+Each figure is a mean or peak over the load window on one M1 Max, in one Docker Desktop VM
+with 10 CPUs and 7.75 GiB. The two app containers share that VM with Postgres and Valkey.
+Neither app had a CPU or memory limit set.
+
+| Configuration | containers on the path | mean CPU (cores) | peak CPU (cores) | peak memory (MiB) | rps | CPU ms per request |
+|---|---|---:|---:|---:|---:|---:|
+| rbac-go (no cache) | rbac-go, Postgres | 2.76 | 2.94 | 407 | 5382 | 0.51 |
+| Python + Valkey: Django, policy cache on | Django, Postgres, Valkey | 4.76 | 7.74 | 2552 | 876 | 5.43 |
+| Python: Django, policy cache off | Django, Postgres | 5.00 | 6.49 | 2762 | 310 | 16.12 |
+
+Column notes:
+
+* **CPU** is summed over the containers on the path, per sample, so the peak is the peak of
+  the sum. `docker stats` reports 100% as one core.
+* **CPU ms per request** is mean path CPU in cores × 1000 ÷ rps. It is the figure that
+  carries to another machine, because it does not depend on how many requests that machine
+  manages at once.
+* **Memory** is `docker stats` memory at its peak. The Go path is 387 MiB of Postgres plus
+  about 20 MiB of rbac-go. The Python paths are about 2.1 to 2.3 GiB of Django (22
+  processes) plus Postgres.
+
+What it says:
+
+* **Python costs about 10× the Go path per request, or about 30× without its cache**
+  (5.43 ms vs 0.51 ms, and 16.12 ms with the policy cache off).
+* **Django needs about 2.1 to 2.3 GiB** at this concurrency, against about 20 MiB for
+  rbac-go. 22 processes at roughly 100 MiB each is the bulk of it. The container grows from
+  about 300 MiB before load to its peak, and did not come back down once its workers had
+  served requests.
+* **The cache moves work from Postgres to Python.** Django's own CPU barely changes between
+  the two Python rows (about 4 to 4.3 cores), but Postgres drops from about 1.0 to 0.3
+  cores, and Valkey takes about 0.15. That is why the cached row is 2.8× faster while
+  costing about a third of the CPU per request.
+* **Valkey is small in memory (14 MiB) but not free in CPU**: about 0.15 cores at 876 req/s
+  (15% in `docker stats` terms). Each cached read does a health-check ping plus the read.
+* **The load generator is not the bottleneck at these rates**: 0.61 cores and 41 MiB at
+  5382 req/s. It is still one Python process, so it may cap the highest rps figures; see
+  [Open items](#open-items).
+
+### Estimate for sizing
+
+Derived from the CPU ms per request above, so it inherits its caveats. Not a capacity plan:
+the measurement is one concurrency (20), one data shape, and no limits set on the
+containers.
+
+| Path | cores at 100 req/s | cores at 1000 req/s | memory to budget |
+|---|---:|---:|---|
+| rbac-go + Postgres | about 0.05 | about 0.5 | 512 MiB (Postgres is about 390) |
+| Python + Valkey + Postgres | about 0.54 | about 5.4 | about 3 GiB |
+| Python (cache off) + Postgres | about 1.6 | about 16 | about 3 GiB |
+
+Read it as: Django costs an order of magnitude more in both CPU and memory at the same
+request rate. On a 10-core node, the Go path leaves plenty of headroom where the Python
+path would need most of the box and several GiB.
+
 ## Reproduce
 
 ### Prerequisites
@@ -138,6 +206,16 @@ This rebuilds the rbac-go image from the checkout, runs `RUNS` measurements into
 rbac-go rows from `results/baseline/`. The stage name must not be `baseline`. It is recorded
 in `ENV.txt`, so note the commit you measured before committing the results.
 
+### Measure the footprint
+
+```bash
+STAGE=footprint scripts/loadtest/footprint.sh
+```
+
+Same order as `baseline.sh`, plus a `docker stats` sampler and `/usr/bin/time -l` around
+each load run. Request counts per run are raised (12000, 30000, 100000) so that each run
+lasts long enough to sample; see [Footprint](#footprint).
+
 ### Run the native reference rows
 
 ```bash
@@ -166,6 +244,8 @@ starts it as a host process on a local port, measures it, and stops it. The Post
 | [env.sh](../scripts/loadtest/env.sh) | Shared settings, the probe identity, and helpers. Sourced by every other script |
 | [baseline.sh](../scripts/loadtest/baseline.sh) | Runs the full baseline in the order above |
 | [go-stage.sh](../scripts/loadtest/go-stage.sh) | Rebuilds and measures rbac-go as a named stage, then reports it against the baseline |
+| [footprint.sh](../scripts/loadtest/footprint.sh) | Measures the same three configurations with container CPU/memory sampling and the load generator's own time report |
+| [footprint_report.py](../scripts/loadtest/footprint_report.py) | Writes `FOOTPRINT.md` from the samples and time reports |
 | [up-baseline.sh](../scripts/loadtest/up-baseline.sh) | Postgres and Valkey containers; sets `max_connections` (stops app containers first, because `ALTER SYSTEM` needs a free connection) |
 | [up-django.sh](../scripts/loadtest/up-django.sh) | Django image, migrate, [django_fixture.py](../scripts/loadtest/django_fixture.py), container with `ACCESS_CACHE_ENABLED` set by `on` or `off` |
 | [up-go.sh](../scripts/loadtest/up-go.sh) | rbac-go image; drops and recreates the `rbacgo` database; migrate, seed, bootstrap; container |
@@ -259,7 +339,9 @@ of the container configurations vary.
    (53.5 ms, 325 req/s) Django is well behind rbac-go on every metric. With it (18.9 ms,
    890 req/s) it has the best p95 and p99 in the baseline. The cache hits were verified during
    setup: a repeated identical request logged no policy write, and the Valkey
-   `rbac::policy::*` keys were present after a run.
+   `rbac::policy::*` keys were present after a run. The footprint section also shows what the
+   cache buys in resources: Postgres drops from about 1.0 to 0.3 cores, while Django's own CPU
+   stays about the same.
 
 2. **The rbac-go tail was connection churn, and the pool fixes it (verified).** Before the
    change, rbac-go ran `database/sql` with its defaults, which keep only two idle connections.
@@ -311,6 +393,12 @@ of the container configurations vary.
   user-defined bridge network, to measure the container overhead without the Docker VM hop.
 * **Record error kinds** in `loadtest.py` (status code or exception class), so a stall like
   Finding 3 can be attributed without inference.
+* **Load generator headroom**: at 5382 req/s the client used 0.61 cores in one Python process.
+  Check whether it caps the highest rps figures by running the same profile from two clients, or
+  from a client on another host.
+* **Footprint with limits**: this measured no container CPU or memory limits. The per-process
+  view for Django (22 processes, about 2.1 GiB) is the input for a Kubernetes request and limit,
+  and that has not been translated yet.
 * **More data shapes**: one org, one group, one role here. Real koku traffic spans many orgs,
   groups and principals.
 * **Django log error**: `Role seeding failed` (`ValueError: badly formed hexadecimal UUID`)
@@ -327,6 +415,7 @@ Per stage, under [scripts/loadtest/results/](../scripts/loadtest/results/):
 | [go-pool](../scripts/loadtest/results/go-pool/) | rbac-go with the pool; three runs, plus the baseline rows for comparison |
 | [native](../scripts/loadtest/results/native/) | rbac-go as a host process, before the pool; SQLite and Postgres |
 | [native-pool](../scripts/loadtest/results/native-pool/) | the same, after the pool; SQLite is the control |
+| [footprint](../scripts/loadtest/results/footprint/) | the three configurations with CPU/memory sampling, run JSON, time reports and [FOOTPRINT.md](../scripts/loadtest/results/footprint/FOOTPRINT.md) |
 
 Each directory holds:
 

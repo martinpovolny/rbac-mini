@@ -1,0 +1,14 @@
+{
+  "endpoint": "/api/v1/access/?application=cost-management&limit=100",
+  "users": 100,
+  "concurrency": 20,
+  "requests": 30000,
+  "errors": 0,
+  "elapsed_s": 33.575,
+  "rps": 893.5,
+  "mean_ms": 20.515,
+  "p50_ms": 19.145,
+  "p95_ms": 32.568,
+  "p99_ms": 40.468,
+  "max_ms": 96.758
+}

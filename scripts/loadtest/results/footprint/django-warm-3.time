@@ -1,0 +1,19 @@
+saved to /Users/martinpovolny/Projects/koku/insights-rbac/rbac-go/scripts/loadtest/results/footprint/django-warm-3.json
+       35.87 real         3.80 user         1.11 sys
+            34242560  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                3407  page reclaims
+                  21  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+               30549  messages sent
+               35403  messages received
+                   0  signals received
+                 182  voluntary context switches
+               56911  involuntary context switches
+         17353846472  instructions retired
+         14564169748  cycles elapsed
+            22905600  peak memory footprint

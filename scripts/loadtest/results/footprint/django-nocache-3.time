@@ -1,0 +1,19 @@
+saved to /Users/martinpovolny/Projects/koku/insights-rbac/rbac-go/scripts/loadtest/results/footprint/django-nocache-3.json
+       47.35 real         1.90 user         0.50 sys
+            32948224  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                3321  page reclaims
+                  21  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+               12551  messages sent
+               14664  messages received
+                   0  signals received
+                 182  voluntary context switches
+               19753  involuntary context switches
+          7337353171  instructions retired
+          7097675335  cycles elapsed
+            21234456  peak memory footprint

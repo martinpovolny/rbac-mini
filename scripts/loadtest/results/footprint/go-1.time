@@ -1,0 +1,19 @@
+saved to /Users/martinpovolny/Projects/koku/insights-rbac/rbac-go/scripts/loadtest/results/footprint/go-1.json
+       18.96 real         6.66 user         4.96 sys
+            42631168  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                3963  page reclaims
+                   7  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+              100549  messages sent
+              100549  messages received
+                   0  signals received
+                 159  voluntary context switches
+              373311  involuntary context switches
+         44195675785  instructions retired
+         34293706495  cycles elapsed
+            31294232  peak memory footprint
