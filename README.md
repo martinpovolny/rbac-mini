@@ -83,6 +83,7 @@ internal/testdb/  per-test isolated DBs (SQLite :memory: or fresh PG database)
 * [Findings](doc/FINDINGS.md) — investigation notes (Celery, cross-account, entrypoint, operator contract, Keycloak sync, seeds, UI surface)
 * [Operator swap](doc/OPERATOR-SWAP.md) — `spec.rbac.backend` plan and rollout deltas
 * [Live-cluster test](doc/LIVE-CLUSTER-TEST.md) — CRC runbook, evidence, rollback caveats
+* [Load test](doc/LOADTEST.md) — `GET /access/` critical path, rbac-go vs Django + Valkey, method and results
 
 ## Deploying
 
