@@ -1,0 +1,14 @@
+{
+  "endpoint": "/api/rbac/v1/access/?application=cost-management&limit=100",
+  "users": 100,
+  "concurrency": 50,
+  "requests": 30000,
+  "errors": 0,
+  "elapsed_s": 2.407,
+  "rps": 12461.7,
+  "mean_ms": 3.906,
+  "p50_ms": 3.392,
+  "p95_ms": 8.482,
+  "p99_ms": 12.23,
+  "max_ms": 29.606
+}

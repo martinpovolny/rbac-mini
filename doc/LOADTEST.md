@@ -88,6 +88,56 @@ The Postgres row shows the pool is the cause of the tail, not the container or t
 falls from 23.9 to 3.2 ms with no Docker in the path. The SQLite control is unchanged within
 noise.
 
+## Concurrency sweep: where the pool stops mattering
+
+![rbac-go concurrency sweep: container and native](../scripts/loadtest/results/concurrency/report.svg)
+
+`MaxOpenConns` is 25. The baseline ran at concurrency 20, so the pool was never asked for
+more than 20 connections. This stage raises concurrency to 50 and 100 to find where the pool
+binds, and repeats the same settings with rbac-go as a host process to separate the pool from
+the Docker path. Every setting uses 30000 requests per run and the median of 3 runs; full
+numbers are in [REPORT.md](../scripts/loadtest/results/concurrency/REPORT.md).
+
+| System | runs | rps | mean ms | p50 ms | p95 ms | p99 ms | max ms (worst run) | errors |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| container C20 | 3 | 5427 | 3.7 | 3.5 | 5.0 | 6.5 | 30.8 | 0 |
+| container C50 | 3 | 5999 | 8.2 | 7.7 | 13.0 | 17.3 | 51.0 | 0 |
+| container C100 | 3 | 5849 | 16.7 | 14.8 | 32.8 | 44.5 | 110.4 | 0 |
+| native C20 | 3 | 12608 | 1.6 | 1.4 | 3.1 | 4.3 | 22.4 | 0 |
+| native C50 | 3 | 12594 | 3.8 | 3.3 | 8.4 | 11.7 | 29.6 | 0 |
+| native C100 | 3 | 12235 | 7.3 | 6.1 | 16.3 | 23.1 | 72.7 | 0 |
+
+What it says:
+
+* **The pool is not the limit at these concurrencies.** Throughput stays near 6000 req/s in
+  the container from C50 to C100 while latency doubles. During a C100 run Postgres reported
+  26 sessions for the `rbacgo` database: the 25 pooled connections plus the psql probe, with
+  only 1 to 5 of them running a query at any sample. The other 20-plus connections sat idle.
+  Raising `MaxOpenConns` would not have changed these numbers.
+* **Latency at fixed throughput is queueing, not more work.** Little's law fits all three
+  container rows: about 5400 to 6000 requests complete per second, and concurrency 20, 50 and
+  100 just divide that rate into proportionally longer waits (p50 3.5, 7.7, 14.8 ms).
+* **The container path caps at about half the native rate.** Native holds near 12500 req/s
+  from C20 to C100, while the container holds near 6000. The DB pool, query and JSON work are
+  identical in both, so the difference is the Docker Desktop network path, not the application.
+  This is the same effect as the earlier p50 gap (3.6 ms in a container, 1.4 ms native).
+* **The load generator is not the container's cap.** Two load-generator processes at C50
+  each, run together against the container, produced 3014.9 and 3015.5 req/s, about the same
+  6000 aggregate as one client at C100. The cap is on the server side. The native rows were
+  not split across clients, so their flat 12500 could be either side.
+
+Conclusion for sizing: keep the pool at 25 for this workload. The connection budget is
+`replicas × 25` plus Django's workers × threads plus a reserve, and it has to stay under the
+database's `max_connections`. See [Open items](#open-items) for the part that is not measured.
+
+The individual settings are in [sweep-c20](../scripts/loadtest/results/sweep-c20/),
+[sweep-c50](../scripts/loadtest/results/sweep-c50/), [sweep-c100](../scripts/loadtest/results/sweep-c100/),
+[native-sweep-c20](../scripts/loadtest/results/native-sweep-c20/),
+[native-sweep-c50](../scripts/loadtest/results/native-sweep-c50/) and
+[native-sweep-c100](../scripts/loadtest/results/native-sweep-c100/). The combined report is in
+[concurrency](../scripts/loadtest/results/concurrency/), which also records the connection
+samples and the two-client test in [NOTES.md](../scripts/loadtest/results/concurrency/NOTES.md).
+
 ## Footprint
 
 What CPU and memory the three serving paths needed while the load test ran. Measured
@@ -228,6 +278,32 @@ Leave the two variables unset to measure SQLite only. Set `STAGE=native-pool` to
 `results/native-pool/` instead of `results/native/`. The script builds the rbac-go binary,
 starts it as a host process on a local port, measures it, and stops it. The Postgres database
 `rbacgo_native` is dropped and recreated.
+
+### Run the concurrency sweep
+
+```bash
+for c in 20 50 100; do
+  STAGE=sweep-c$c CONCURRENCY=$c REQUESTS=30000 scripts/loadtest/go-stage.sh
+  STAGE=native-sweep-c$c CONCURRENCY=$c REQUESTS=30000 \
+  NATIVE_PG_ADMIN_DSN='postgres://me@127.0.0.1:55432/postgres?sslmode=disable' \
+  NATIVE_PG_DSN='postgres://me@127.0.0.1:55432/rbacgo_native?sslmode=disable' \
+    scripts/loadtest/native.sh
+done
+```
+
+Then combine the settings into one report, using `STAGE/LABEL` groups:
+
+```bash
+python3 scripts/loadtest/report.py --results-dir scripts/loadtest/results/concurrency \
+  --group 'sweep-c20/go=container C20' --group 'sweep-c50/go=container C50' \
+  --group 'sweep-c100/go=container C100' \
+  --group 'native-sweep-c20/native-pg=native C20' \
+  --group 'native-sweep-c50/native-pg=native C50' \
+  --group 'native-sweep-c100/native-pg=native C100'
+```
+
+Run the settings one at a time. Two load runs started together compete for the host and
+invalidate the numbers.
 
 ### Other entry points
 
@@ -378,24 +454,34 @@ of the container configurations vary.
    artifact of it. The tool now picks users at random per thread and primes each user once.
    Every number in this document comes from the fixed tool.
 
+7. **The pool does not bind up to concurrency 100; the container path caps near 6000 req/s.**
+   At C100 Postgres had 25 idle pooled connections and 1 to 5 active queries per sample, and
+   throughput was the same as C50 with proportionally higher latency. Native rbac-go held near
+   12500 req/s over C20 to C100, about twice the container rate. Two clients at C50 did not
+   raise the container total, so the container cap is server-side. Details in the
+   [concurrency sweep](#concurrency-sweep-where-the-pool-stops-mattering).
+
 ## Open items
 
-* **Concurrency sweep for the pool**: `MaxOpenConns` is 25 and the load runs at 20, so the pool
-  is not the limit here. Run `CONCURRENCY=50` and `CONCURRENCY=100` on the go-pool build to see
-  where requests start queuing for a connection, and whether the 25 needs to move.
 * **On-prem connection budget**: each rbac-go process can hold up to 25 Postgres connections.
   The sum over replicas, plus Django's workers × threads, has to stay under `max_connections`.
-  This is not checked anywhere yet.
-* **Profile the remaining cost**: the container p50 is 3.6 ms and the native Postgres p50 is
-  1.4 ms. The query plan and the JSON encoding are the next things to look at, but no profile
-  has been taken.
+  This is not checked anywhere yet. The [concurrency sweep](#concurrency-sweep-where-the-pool-stops-mattering)
+  shows 25 is enough for this workload; it does not validate the arithmetic for a real
+  multi-replica deployment.
+* **Profile the remaining cost**: the container p50 is 3.5 ms at C20 and the native Postgres
+  p50 is 1.4 ms. The query plan and the JSON encoding are the next things to look at, but no
+  profile has been taken. The sweep suggests the gap is at least partly the container network
+  path, not the query.
 * **Remove `host.docker.internal` from the path**: put Postgres, Valkey and both apps on one
   user-defined bridge network, to measure the container overhead without the Docker VM hop.
+  The sweep's container cap (about 6000 req/s, half the native rate) is the reason to try this
+  next; re-run C20 to C100 after the change.
 * **Record error kinds** in [loadtest.py](../scripts/loadtest/loadtest.py) (status code or exception class), so a stall like
   Finding 3 can be attributed without inference.
-* **Load generator headroom**: at 5382 req/s the client used 0.61 cores in one Python process.
-  Check whether it caps the highest rps figures by running the same profile from two clients, or
-  from a client on another host.
+* **Load generator headroom**: at C100 the client used 0.67 cores in one Python process, and
+  two clients at C50 did not push the container past its single-client cap, so the container
+  numbers are server-bound. The native rows were not split across clients, so their flat
+  12500 req/s may still be a client limit; run the native rows from two clients to check.
 * **Footprint with limits**: this measured no container CPU or memory limits. The per-process
   view for Django (22 processes, about 2.1 GiB) is the input for a Kubernetes request and limit,
   and that has not been translated yet.
@@ -415,6 +501,9 @@ Per stage, under [scripts/loadtest/results/](../scripts/loadtest/results/):
 | [go-pool](../scripts/loadtest/results/go-pool/) | rbac-go with the pool; three runs, plus the baseline rows for comparison |
 | [native](../scripts/loadtest/results/native/) | rbac-go as a host process, before the pool; SQLite and Postgres |
 | [native-pool](../scripts/loadtest/results/native-pool/) | the same, after the pool; SQLite is the control |
+| [sweep-c20](../scripts/loadtest/results/sweep-c20/), [sweep-c50](../scripts/loadtest/results/sweep-c50/), [sweep-c100](../scripts/loadtest/results/sweep-c100/) | container at concurrency 20, 50 and 100 |
+| [native-sweep-c20](../scripts/loadtest/results/native-sweep-c20/), [native-sweep-c50](../scripts/loadtest/results/native-sweep-c50/), [native-sweep-c100](../scripts/loadtest/results/native-sweep-c100/) | the same settings as a host process |
+| [concurrency](../scripts/loadtest/results/concurrency/) | the combined sweep report and chart; no runs of its own |
 | [footprint](../scripts/loadtest/results/footprint/) | the three configurations with CPU/memory sampling, run JSON, time reports and [FOOTPRINT.md](../scripts/loadtest/results/footprint/FOOTPRINT.md) |
 
 Each directory holds:
