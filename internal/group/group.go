@@ -48,7 +48,7 @@ func List(db *store.DB, orgID string, includeDefaults bool, limit, offset int) (
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items = []Group{}
 	for rows.Next() {
 		var g Group
@@ -121,7 +121,7 @@ func AssignRoles(db *store.DB, orgID, groupUUID string, roleUUIDs []string) erro
 		return err
 	}
 	if ad != 0 {
-		return fmt.Errorf("Default admin access cannot be modified.")
+		return fmt.Errorf("default admin access cannot be modified")
 	}
 	roleIDs, err := resolveRoleIDs(db, orgID, roleUUIDs)
 	if err != nil {
@@ -131,7 +131,7 @@ func AssignRoles(db *store.DB, orgID, groupUUID string, roleUUIDs []string) erro
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	policyID, err := ensureGroupPolicy(tx, groupID, tenantID, groupNameOf(tx, groupID))
 	if err != nil {
 		return err
@@ -161,7 +161,7 @@ func RemoveRoles(db *store.DB, orgID, groupUUID string, roleUUIDs []string) erro
 		return err
 	}
 	if ad != 0 {
-		return fmt.Errorf("Default admin access cannot be modified.")
+		return fmt.Errorf("default admin access cannot be modified")
 	}
 	roleIDs, err := resolveRoleIDs(db, orgID, roleUUIDs)
 	if err != nil {
@@ -200,7 +200,7 @@ func Roles(db *store.DB, orgID, groupUUID string, limit, offset int) (items []ro
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items = []role.Role{}
 	for rows.Next() {
 		var r role.Role
@@ -233,7 +233,7 @@ func Members(db *store.DB, orgID, groupUUID string, limit, offset int) (items []
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items = []principal.Principal{}
 	for rows.Next() {
 		var username string
@@ -355,12 +355,12 @@ func changeMembers(db *store.DB, orgID, groupUUID string, usernames []string, ad
 		var id int64
 		var u string
 		if err := rows.Scan(&id, &u); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		idByName[strings.ToLower(u)] = id
 	}
-	rows.Close()
+	_ = rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
@@ -388,14 +388,6 @@ func changeMembers(db *store.DB, orgID, groupUUID string, usernames []string, ad
 		}
 	}
 	return nil
-}
-
-func anySlice(in []string) []any {
-	out := make([]any, 0, len(in))
-	for _, v := range in {
-		out = append(out, v)
-	}
-	return out
 }
 
 type ErrProtected struct{ Action, Kind string }
@@ -426,7 +418,7 @@ func Update(db *store.DB, orgID, uuid, name, description string, setDescription 
 		return Group{}, ErrProtected{Action: "UPDATE", Kind: "platform_default"}
 	}
 	if ad != 0 {
-		return Group{}, fmt.Errorf("Default admin access cannot be modified.")
+		return Group{}, fmt.Errorf("default admin access cannot be modified")
 	}
 	if setDescription {
 		if _, err := db.Exec(`UPDATE groups SET name=?, description=? WHERE id=?`, name, description, id); err != nil {

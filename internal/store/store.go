@@ -185,7 +185,7 @@ func OpenSQLite(dsn string) (*DB, error) {
 	}
 	raw.SetMaxOpenConns(1)
 	if _, err := raw.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		raw.Close()
+		_ = raw.Close()
 		return nil, err
 	}
 	return &DB{DB: raw, Driver: DriverSQLite}, nil

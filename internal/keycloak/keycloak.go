@@ -263,7 +263,7 @@ func applyOrg(db *store.DB, cfg Config, orgID, accountNumber string, users []kcU
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	var tenantID int64
 	err = tx.QueryRow(`SELECT id FROM tenants WHERE org_id=?`, orgID).Scan(&tenantID)

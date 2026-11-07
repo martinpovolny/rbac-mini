@@ -76,7 +76,7 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Perm
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items = []Permission{}
 	for rows.Next() {
 		var p Permission
@@ -100,7 +100,7 @@ func Options(db *store.DB, orgID, field string, f Filter) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []string{}
 	for rows.Next() {
 		var v string

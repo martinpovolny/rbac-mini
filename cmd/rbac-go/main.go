@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"rbac-go/internal/keycloak"
 	"rbac-go/internal/seed"
@@ -106,14 +107,14 @@ func run(args []string, databaseURL string) error {
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		return nil
 	case "seed":
 		db, err := open()
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		return seed.Seed(db)
 	case "bootstrap":
 		fs := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
@@ -130,7 +131,7 @@ func run(args []string, databaseURL string) error {
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		return seed.Bootstrap(db, *org, *account, strings.Split(*users, ","))
 	case "sync":
 		fs := flag.NewFlagSet("sync", flag.ContinueOnError)
@@ -152,7 +153,7 @@ func run(args []string, databaseURL string) error {
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		return keycloak.Sync(db, keycloak.Config{
 			BaseURL: *keycloakURL, Realm: *realm,
 			ClientID: *clientID, ClientSecret: *clientSecret,
@@ -188,12 +189,12 @@ func prepareDB(databaseURL string, withSeed bool) (*store.DB, error) {
 		return nil, err
 	}
 	if err := store.Migrate(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if withSeed {
 		if err := seed.Seed(db); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, err
 		}
 	}
@@ -213,11 +214,15 @@ func startServerWith(databaseURL, addr string, withSeed bool) (string, func(), e
 	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return "", nil, err
 	}
 	go func() {
-		_ = http.Serve(ln, server.New(db))
+		srv := &http.Server{
+			Handler:           server.New(db),
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		_ = srv.Serve(ln)
 	}()
 	return ln.Addr().String(), func() {
 		_ = ln.Close()

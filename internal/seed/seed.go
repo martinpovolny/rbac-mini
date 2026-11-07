@@ -27,7 +27,7 @@ func Seed(db *store.DB) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec(`INSERT INTO tenants(org_id, tenant_name, ready)
 		VALUES('public','public',1) ON CONFLICT(org_id) DO NOTHING`); err != nil {
@@ -89,7 +89,7 @@ func Bootstrap(db *store.DB, orgID, accountID string, usernames []string) error 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec(`INSERT INTO tenants(org_id, tenant_name, account_id, ready)
 		VALUES(?, 'acct'||?, ?, 1) ON CONFLICT(org_id) DO NOTHING`,

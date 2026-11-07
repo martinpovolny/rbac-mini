@@ -287,7 +287,7 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 	if limit >= 0 {
 		effectiveLimit = limit
 	}
-	page := entries
+	var page []access.Entry
 	if offset < total {
 		end := offset + effectiveLimit
 		if end > total {
@@ -1068,7 +1068,7 @@ func (s *Server) handleRoleAccess(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	total := len(role.Access)
-	page := role.Access
+	var page []access.Entry
 	if offset < total {
 		end := offset + limit
 		if end > total {

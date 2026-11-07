@@ -70,7 +70,7 @@ ORDER BY p.permission`
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	byPerm := map[string]*Entry{}
 	order := []string{}

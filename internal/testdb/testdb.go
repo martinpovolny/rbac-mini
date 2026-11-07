@@ -33,7 +33,7 @@ func Open(t T) *store.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	if err := store.Migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
@@ -50,20 +50,20 @@ func openPostgres(t T, bootstrapDSN string) *store.DB {
 	_, _ = rand.Read(b[:])
 	name := fmt.Sprintf("rbac_test_%d_%s", os.Getpid(), hex.EncodeToString(b[:]))
 	if _, err := admin.Exec("CREATE DATABASE " + name); err != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatalf("create database: %v", err)
 	}
 	db, err := store.OpenPostgres(withDB(bootstrapDSN, name))
 	if err != nil {
-		admin.Close()
+		_ = admin.Close()
 		t.Fatalf("open test database: %v", err)
 	}
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 		if _, err := admin.Exec("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)"); err != nil {
 			t.Logf("drop database %s: %v", name, err)
 		}
-		admin.Close()
+		_ = admin.Close()
 	})
 	if err := store.Migrate(db); err != nil {
 		t.Fatalf("migrate: %v", err)

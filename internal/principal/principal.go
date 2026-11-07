@@ -32,7 +32,7 @@ func List(db *store.DB, orgID string, limit, offset int) (items []Principal, tot
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items = []Principal{}
 	for rows.Next() {
 		var username string

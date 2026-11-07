@@ -89,7 +89,7 @@ func Create(db *store.DB, orgID, name, displayName, description string, grants [
 	if err != nil {
 		return Role{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if displayName == "" {
 		displayName = name
 	}
@@ -161,7 +161,7 @@ func List(db *store.DB, orgID, nameFilter string, limit, offset int) (items []Ro
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items = []Role{}
 	for rows.Next() {
 		var r Role
@@ -202,7 +202,7 @@ func Get(db *store.DB, orgID, uuid string) (Role, error) {
 	if err != nil {
 		return Role{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	byPerm := map[string]*access.Entry{}
 	var order []string
 	for rows.Next() {
@@ -326,7 +326,7 @@ func Update(db *store.DB, orgID, uuid, name, displayName, description string, gr
 	if err != nil {
 		return Role{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var roleID, tenantID int64
 	var system int
 	var currentName string
@@ -361,7 +361,7 @@ func Patch(db *store.DB, orgID, uuid string, fields map[string]string) (Role, er
 	if err != nil {
 		return Role{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var roleID int64
 	var system int
 	var name string
@@ -378,7 +378,7 @@ func Patch(db *store.DB, orgID, uuid string, fields map[string]string) (Role, er
 	for k, v := range fields {
 		col, ok := cols[k]
 		if !ok {
-			return Role{}, fmt.Errorf("Field '%s' is not supported. Please use one or more of: [name display_name description]", k)
+			return Role{}, fmt.Errorf("field '%s' is not supported. Please use one or more of: [name display_name description]", k)
 		}
 		if _, err := tx.Exec(fmt.Sprintf("UPDATE roles SET %s=? WHERE id=?", col), v, roleID); err != nil {
 			return Role{}, err
