@@ -6,22 +6,28 @@ changes except where marked TODO.
 
 ## 0. Open decisions
 
-1. **Image registry + tag**: RESOLVED — `quay.io/martin_povolny/rbac-go:v0.1.0`
-   (multi-arch `linux/amd64`+`linux/arm64` index
-   `sha256:c333125957c1e688b0efa5322d29d4f5e60ee72092a8d16d67c72633cd161547`,
-   pushed 2026-11-06). Operator's `RBACConfig.Image` default becomes
-   repository `quay.io/martin_povolny/rbac-go`, tag `v0.1.0`.
+1. **Image registry + tag**: RESOLVED — `quay.io/martin_povolny/rbac-go`.
+   Use the current verified tag (`v0.3.6` at the time of writing; see
+   [LIVE-CLUSTER-TEST.md](LIVE-CLUSTER-TEST.md)); operator's
+   `RBACConfig.Image` default becomes repository
+   `quay.io/martin_povolny/rbac-go`.
 2. **Multi-org Keycloak sync**: RESOLVED in rbac-go — `sync` without
    `--org` discovers orgs from Keycloak groups (`--org-group-prefix`,
    default `org-`, env `SYNC_ORG_GROUP_PREFIX`), reads per-group
    `org_id`/`account_number` attributes, and syncs members per org exactly
-   like `discover_and_sync`/`sync` (tenant ensure, skip disabled +
-   `service-account-*`, prune, no group touch). Single-org `--org` mode kept
-   for tests/ops.
+   like `discover_and_sync`/`sync` (tenant ensure, skip `service-account-*`,
+   persist email/names/`enabled`/`org-admin`, keep disabled users, prune only
+   users absent from Keycloak, no group touch). `SYNC_GROUP` is optional and
+   empty by default; the org-admin source is the realm role named by
+   `SYNC_ORG_ADMIN_SUBGROUP` (default `org-admin`). Single-org `--org` mode is
+   kept for tests/ops.
 3. **Seed parity**: rbac-go seeds `Cost Administrator` + `Sources
-   administrator`. The operator seed JSON also defines `Cost Price List
-   Administrator/Viewer` etc. Needed only if on-prem UI delegation uses them;
-   otherwise drop from [rbac_seed/data/](https://github.com/project-koku/koku-service-operator/tree/main/internal/resources/rbac_seed/data).
+   administrator` (both `admin_default`), the public `Default admin access`
+   group, and the granular cost-management/sources permission catalog the role
+   wizard lists. The operator seed JSON also defines `Cost Price List
+   Administrator/Viewer` etc.; those roles are still absent and are needed
+   only if on-prem UI delegation uses them
+   ([rbac_seed/data/](https://github.com/project-koku/koku-service-operator/tree/main/internal/resources/rbac_seed/data)).
 
 ## 1. API Deployment ([rbac.go: RBACAPIDeployment](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac.go))
 
@@ -37,7 +43,7 @@ changes except where marked TODO.
 
 * `RBACWorkerDeployment` (celery) and the beat scheduler: no async work left.
 * `KeycloakSyncConfigMap` (embedded [sync_keycloak_principals.py](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/scripts/sync_keycloak_principals.py)): replaced by flags.
-* [rbac_seed_configmap.go](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac_seed_configmap.go) mounts (`…/role/permissions/*.json`): seed data is compiled in; delete once seed parity (§0.3) is settled.
+* [rbac_seed_configmap.go](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac_seed_configmap.go) mounts (`…/role/permissions/*.json`): the permission catalog and admin-default group are compiled in; delete once price-list role parity (§0.3) is settled.
 * `WaitForValkeyInitContainer` on rbac pods: rbac-go never dials Valkey. (Valkey itself stays — koku core still uses it.)
 
 ## 3. Migration/seed Job ([migration.go: RBACMigrationJob](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/migration.go))
@@ -59,7 +65,8 @@ Replace `python manage.py shell < sync_keycloak_principals.py` with:
 ```
 rbac-go sync --keycloak-url $KEYCLOAK_URL --realm $KEYCLOAK_REALM \
   --client-id $KEYCLOAK_CLIENT_ID --client-secret $KEYCLOAK_CLIENT_SECRET \
-  --org $ORG_ID --group $GROUP [--prune-orphans=$SYNC_PRUNE_ORPHANS]
+  --org $ORG_ID [--group $SYNC_GROUP] \
+  [--org-admin-role $SYNC_ORG_ADMIN_SUBGROUP] [--prune-orphans=$SYNC_PRUNE_ORPHANS]
 ```
 
 Env names map 1:1 except org/group resolution (see §0.2). Schedule, image,

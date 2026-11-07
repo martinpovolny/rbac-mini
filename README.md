@@ -26,11 +26,19 @@ All under `/api/rbac/v1/` ([interactive ReDoc](https://redocly.github.io/redoc/?
 
 Jobs (CLI subcommands, no daemon, no queue):
 
-* `migrate` / `seed` — portable schema + Cost Administrator and
-  Sources administrator roles (idempotent; runs as the operator migration Job).
+* `migrate` / `seed` — portable schema, Cost Administrator and Sources
+  administrator roles, the public `Default admin access` group, and the
+  granular permission catalog the role wizard lists (idempotent; runs as the
+  operator migration Job).
 * `bootstrap --org --account --users` — tenant + admin group + principals.
-* `sync` — Keycloak users → principals, with org discovery (`--org-group-prefix`)
-  and orphan pruning; reads the same env the operator already injects.
+* `sync` — Keycloak users → principals with email/names/enabled/org-admin
+  (realm role) persisted, org discovery (`--org-group-prefix`), disabled-user
+  retention, and orphan pruning; reads the same env the operator already
+  injects.
+
+List endpoints implement the v1 filters the on-prem UI sends (`name` /
+`name_match`, `status`, default-group probes, `order_by`) and return the
+`created`/`modified` timestamps used by the "Last modified" columns.
 
 Batteries explicitly **not** included: no Valkey/Redis (koku caches for 30s),
 no Kessel, no Kafka, no Celery, no BOP lookups (on-prem runs with

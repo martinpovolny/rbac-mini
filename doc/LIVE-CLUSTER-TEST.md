@@ -18,8 +18,8 @@ oc -n cost-byoi get costmanagementserviceconfig  # note the CR name
 ```bash
 cd /Users/martinpovolny/Projects/koku/insights-rbac/rbac-go
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t quay.io/martin_povolny/rbac-go:v0.3.3 --push .
-docker buildx imagetools inspect quay.io/martin_povolny/rbac-go:v0.3.3
+  -t quay.io/martin_povolny/rbac-go:v0.3.6 --push .
+docker buildx imagetools inspect quay.io/martin_povolny/rbac-go:v0.3.6
 # expect: linux/amd64 + linux/arm64 manifests
 ```
 
@@ -49,7 +49,7 @@ oc -n cost-operator rollout status deployment/<operator-deploy>
 ```bash
 CR=<cr-name>   # from step 0
 oc -n cost-byoi patch costmanagementserviceconfig $CR --type=merge \
-  -p '{"spec":{"rbac":{"backend":"go","image":{"repository":"quay.io/martin_povolny/rbac-go","tag":"v0.3.3"}}}}'
+  -p '{"spec":{"rbac":{"backend":"go","image":{"repository":"quay.io/martin_povolny/rbac-go","tag":"v0.3.6"}}}}'
 ```
 
 Watch the rollout (no worker expected):
@@ -149,6 +149,66 @@ as Keycloak user `admin` (realm role `org-admin`, password `admin`):
 | Groups | create, add member, assign role, member/role lists, delete |
 | Permissions | `exclude_globals=true` returns 12 entries; options return `cost-management,sources` |
 | Keycloak sync CronJob | manual job succeeds; principal `admin` has email, names, Keycloak id, `is_org_admin=1`, `is_active=1` |
+
+### Data source for the RBAC resource-definition dropdowns
+
+The role wizard's "Define Cost Management resources" dropdowns are fed by
+koku, not rbac-go. On a fresh cluster koku has no tenant schema (`org<org_id>`)
+and `/api/cost-management/v1/resource-types/` returns an empty page; the
+schema is created when the first source is added.
+
+Install the metrics operator and let it create the source:
+
+```bash
+# OLM: package costmanagement-metrics-operator, channel stable, redhat-operators
+# (OwnNamespace in costmanagement-metrics-operator)
+```
+
+`CostManagementMetricsConfig` used on CRC:
+
+```yaml
+spec:
+  api_url: https://cost-management-gateway-cost-byoi.apps-crc.testing
+  authentication:
+    type: service-account
+    secret_name: cost-mgmt-operator-auth   # client_id/client_secret of cost-management-operator
+    token_url: https://keycloak-keycloak.apps-crc.testing/realms/kubernetes/protocol/openid-connect/token
+  upload:
+    ingress_path: /api/ingress/v1/upload
+    upload_cycle: 30
+    upload_toggle: true
+    validate_cert: false
+  prometheus_config:
+    service_address: https://thanos-querier.openshift-monitoring.svc:9091
+    skip_tls_verification: false
+    collect_previous_data: true
+  source:
+    sources_path: /api/cost-management/v1/
+    create_source: true
+    check_cycle: 1440
+    name: crc-cost-management
+```
+
+Prerequisites that were needed:
+
+* `org-admin` realm role on the `cost-management-operator` service account,
+  and a `cost-mgmt-operator` principal in rbac-go (koku's sources permission
+  checks `/access/`).
+* The gateway must accept the Keycloak token and mint `x-rh-identity` for it.
+* Object storage: the MinIO community image is no longer pullable, so the
+  `minio` Deployment in `cost-byoi-infra` was replaced with SeaweedFS S3 on the
+  same service/port (`weed server -s3 -s3.port=9000`). Lab-only.
+* Kafka authorization (`simple`) was removed so the ingress/listener can use
+  anonymous PLAINTEXT. Lab-only.
+
+Result after the first upload: six OCP CSVs processed into `org1234567`, and
+`/resource-types/` returned `openshift.cluster=1`, `openshift.node=1`,
+`openshift.project=54`, `settings=1`. AWS/GCP/Azure rows stay empty because
+the on-prem sources API only registers `openshift` source types.
+
+`rbac-go v0.3.6` additionally returns `created`/`modified` on roles and groups
+(including group roles and user-detail role rows), so the "Last modified"
+columns render dates instead of "Invalid date"/"—".
 
 ## Notes
 

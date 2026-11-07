@@ -44,9 +44,13 @@ Go replacement for `insights-rbac`, scoped to what `../koku` and
     (+ `GET .../access/`) — Roles pages + creation wizard. Create validates
     `application ∈ ROLE_CREATE_ALLOW_LIST`
     ([management/role/view.py:validate_role](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/role/view.py)); `resourceDefinitions: []`
-    means global scope and is valid.
+    means global scope and is valid. The list honours `name`/`display_name`
+    with `name_match`, `system`, and `order_by=[-](name|display_name|modified|policyCount)`.
   * `GET /api/rbac/v1/groups/` + membership/role sub-paths used by the UI
-    (list, detail, principals, roles) — Groups pages.
+    (list, detail, principals, roles) — Groups pages. The list honours
+    `name` (with `name_match`), `platform_default`, `admin_default`,
+    `system`, and `order_by=[-](name|modified|principalCount|policyCount)`.
+    Group members reuse the principal contract and filters.
   * `GET /api/rbac/v1/permissions/?allowed_only=&exclude_globals=` +
     `GET /api/rbac/v1/permissions/options/?field=application&allowed_only=` —
     wizard Step 2 (`allowed_only` filters to `ROLE_CREATE_ALLOW_LIST`).
@@ -112,11 +116,26 @@ Query semantics ([management/querysets.py:244-270](https://github.com/RedHatInsi
 Errors: `400` on bad `order_by`/`status`/v2-org misuse; never `403` from this
 endpoint (koku maps non-200 `[]` → deny, `5xx`/conn-error → `424`).
 
+### Role and group shapes
+
+`created` and `modified` are fixed-width UTC timestamps
+(`2006-01-02T15:04:05.000000000Z`), so TEXT ordering is chronological on both
+databases. Existing rows are backfilled by `migrate`; create/update/patch stamp
+them. The UI renders "Last modified" from `modified` on roles, groups, group
+roles and user-detail role rows.
+
+* Role list item: `uuid, name, display_name, description?, system, created,
+  modified`. Role detail adds `access: [{permission, resourceDefinitions}]`.
+* Group list/detail: `uuid, name, description?, principalCount, roleCount,
+  platform_default, admin_default, system, created, modified`.
+* Group members and `?username_only=true` return the principal contract from
+  §4, with the same `status`/`admin_only` filters as `/principals/`.
+
 ### GET /api/rbac/v1/status/, /ready/, /metrics
 
-* `status/` → `{"status": "ok"}` (probe target, [`rbac.go:48`](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac.go#L48) `BYPASS_BOP`).
-* `ready/` → `200` when the SQL DB is reachable (`sql.Ping`), else `503`.
-  Must work identically for SQLite file and Postgres.
+* `status/` → `{"api_version": 1}` (probe target, [`rbac.go:48`](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac.go#L48) `BYPASS_BOP`).
+* `ready/` → `200 {"ready": true}` when the SQL DB is reachable (`sql.Ping`),
+  else `503`. Must work identically for SQLite file and Postgres.
 * `metrics/` → Prometheus exposition (at minimum `up`, request counters by
   `url_name`; keep label names stable for `dashboards/`).
 
@@ -151,11 +170,11 @@ Portable type rules (no PG-only DDL):
 |---|---|
 | `tenants` | `id INTEGER PK, org_id TEXT UNIQUE, tenant_name TEXT, account_id TEXT, ready INTEGER` |
 | `principals` | `id INTEGER PK, uuid TEXT UNIQUE, username TEXT (lowercase), type TEXT, service_account_id TEXT, user_id TEXT, email TEXT, first_name TEXT, last_name TEXT, is_org_admin INTEGER, is_active INTEGER, cross_account INTEGER, tenant_id INTEGER FK` + unique `(username, tenant_id)` |
-| `groups` | `id INTEGER PK, uuid TEXT UNIQUE, name TEXT, description TEXT, platform_default INTEGER, system INTEGER, admin_default INTEGER, tenant_id INTEGER FK` + unique `(name, tenant_id)` |
+| `groups` | `id INTEGER PK, uuid TEXT UNIQUE, name TEXT, description TEXT, platform_default INTEGER, system INTEGER, admin_default INTEGER, created TEXT, modified TEXT, tenant_id INTEGER FK` + unique `(name, tenant_id)` |
 | `group_principals` | `group_id INTEGER FK, principal_id INTEGER FK`, PK `(group_id, principal_id)` |
 | `policies` | `id INTEGER PK, uuid TEXT UNIQUE, name TEXT, group_id INTEGER FK NULL, system INTEGER, tenant_id INTEGER FK` + unique `(name, tenant_id)` |
 | `policy_roles` | `policy_id INTEGER FK, role_id INTEGER FK`, PK `(policy_id, role_id)` |
-| `roles` | `id INTEGER PK, uuid TEXT UNIQUE, name TEXT, display_name TEXT, system INTEGER, platform_default INTEGER, admin_default INTEGER, tenant_id INTEGER FK` + unique `(name, tenant_id)` |
+| `roles` | `id INTEGER PK, uuid TEXT UNIQUE, name TEXT, display_name TEXT, description TEXT, system INTEGER, platform_default INTEGER, admin_default INTEGER, created TEXT, modified TEXT, tenant_id INTEGER FK` + unique `(name, tenant_id)` |
 | `permissions` | `id INTEGER PK, application TEXT, resource_type TEXT, verb TEXT, permission TEXT UNIQUE, tenant_id INTEGER FK` |
 | `access` | `id INTEGER PK, role_id INTEGER FK, permission_id INTEGER FK, tenant_id INTEGER FK` |
 | `resource_definitions` | `id INTEGER PK, access_id INTEGER FK, attribute_filter TEXT (JSON), tenant_id INTEGER FK` |

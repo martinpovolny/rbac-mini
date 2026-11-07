@@ -35,6 +35,11 @@ erDiagram
         TEXT type
         TEXT service_account_id
         TEXT user_id
+        TEXT email
+        TEXT first_name
+        TEXT last_name
+        INTEGER is_org_admin
+        INTEGER is_active
         INTEGER cross_account
         INTEGER tenant_id FK
     }
@@ -46,6 +51,8 @@ erDiagram
         INTEGER platform_default
         INTEGER system
         INTEGER admin_default
+        TEXT created
+        TEXT modified
         INTEGER tenant_id FK
     }
     group_principals {
@@ -73,6 +80,8 @@ erDiagram
         INTEGER system
         INTEGER platform_default
         INTEGER admin_default
+        TEXT created
+        TEXT modified
         INTEGER tenant_id FK
     }
     permissions {

@@ -110,9 +110,13 @@ Confirmed on-prem UI calls (traffic traces + source refs):
   — Users page (401-loop trace) and the user-detail page, which looks a single
   principal up by `usernames=`.
 - `GET /api/rbac/v1/groups/…` — Groups pages (list, members, group roles;
-  34 refs in v1+shared).
+  34 refs in v1+shared). The list sends `name` + `name_match=exact` while the
+  name field is typed, probes `platform_default=true` / `admin_default=true`
+  for the protected groups, and sorts with `order_by=name|-modified`.
 - `GET|POST|PUT|PATCH|DELETE /api/rbac/v1/roles/…` — Roles pages + creation
-  wizard (21 refs).
+  wizard (21 refs). Availability checks send `name`/`display_name` with
+  `name_match=exact`; the list sorts by `display_name` and the table renders
+  `modified` ("Last modified"). User detail also renders `role.modified`.
 - `GET /api/rbac/v1/permissions/?allowed_only=true&exclude_globals=true…` +
   `GET /api/rbac/v1/permissions/options/?field=application&allowed_only=true`
   — wizard Step 2 (needs `ROLE_CREATE_ALLOW_LIST=cost-management,sources`,
