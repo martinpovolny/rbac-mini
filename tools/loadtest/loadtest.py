@@ -4,6 +4,10 @@
 Stdlib only. Each worker thread owns one keep-alive HTTPConnection so the
 numbers reflect server+DB time, not TCP/TLS handshakes.
 
+Each request picks a user at random (seeded per thread). Threads must not
+walk the user list in lockstep: all threads hitting the same user at once
+causes a cache stampede that a real caller mix would not produce.
+
 Usage:
   python3 loadtest.py --base-url http://localhost:8080 --org 100001 \\
       --users test-user-0..test-user-99 --concurrency 20 --requests 2000
@@ -20,6 +24,7 @@ import base64
 import concurrent.futures
 import http.client
 import json
+import random
 import statistics
 import sys
 import time
@@ -64,7 +69,7 @@ def expand_users(spec):
     return [f"{prefix}-{i}" for i in range(lo, hi + 1)]
 
 
-def worker(base, path, headers_list, count):
+def worker(base, path, headers_list, picks):
     """One thread: reuse a single connection, record latencies in ms."""
     url = urllib.parse.urlparse(base)
     conn_cls = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
@@ -72,8 +77,8 @@ def worker(base, path, headers_list, count):
     conn = conn_cls(url.hostname, port, timeout=30)
     lat, errors = [], 0
     try:
-        for i in range(count):
-            headers = {"X-Rh-Identity": headers_list[i % len(headers_list)]}
+        for pick in picks:
+            headers = {"X-Rh-Identity": headers_list[pick]}
             start = time.perf_counter()
             try:
                 conn.request("GET", path, headers=headers)
@@ -98,6 +103,8 @@ def worker(base, path, headers_list, count):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--base-url", required=True)
+    ap.add_argument("--api-prefix", default="/api/rbac/v1",
+                    help="API path prefix (Django default is /api/v1; operator sets /api/rbac)")
     ap.add_argument("--org", required=True)
     ap.add_argument("--users", required=True, help="'alice' or 'user-0..99'")
     ap.add_argument("--application", default="cost-management")
@@ -111,21 +118,25 @@ def main():
 
     usernames = expand_users(args.users)
     headers = [identity_header(args.org, u) for u in usernames]
-    path = f"/api/rbac/v1/access/?application={args.application}&limit={args.limit}"
+    path = f"{args.api_prefix}/access/?application={args.application}&limit={args.limit}"
 
     def run(total):
         per_thread = total // args.concurrency
         lat, errors = [], 0
         t0 = time.perf_counter()
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as ex:
-            futs = [ex.submit(worker, args.base_url, path, headers, per_thread)
-                    for _ in range(args.concurrency)]
+            futs = []
+            for t in range(args.concurrency):
+                rng = random.Random(t)
+                picks = [rng.randrange(len(headers)) for _ in range(per_thread)]
+                futs.append(ex.submit(worker, args.base_url, path, headers, picks))
             for f in concurrent.futures.as_completed(futs):
                 l, e = f.result()
                 lat.extend(l)
                 errors += e
         return lat, errors, time.perf_counter() - t0
 
+    worker(args.base_url, path, headers, range(len(headers)))  # prime: one request per user
     run(args.warmup)  # warmup: connections, caches, query plans
     lat, errors, elapsed = run(args.requests)
 
