@@ -81,26 +81,7 @@ flowchart LR
 no membership rows needed. See `FINDINGS.md` §“live-cluster test” for why:
 without this, on-prem loses the public `Default access` grants.
 
-## 3. Groups vs group_principals — why two entities?
-
-They answer different questions:
-
-| | `groups` | `group_principals` |
-|---|---|---|
-| Represents | a group as a thing: name, description, `platform_default`, `admin_default`, `system` flags | one membership edge: *principal X belongs to group Y* |
-| Shape | one row per group | one row per (group, principal) pair; composite PK, no payload |
-| Deleted when | group deleted (cascades to edges, policies keep working until then) | either side deleted |
-
-A principal belongs to many groups and a group has many principals — a
-many-to-many relationship, which in portable SQL (runs unchanged on SQLite
-and Postgres, SPEC §3) must be a join table; there are no array columns.
-Keeping flags on `groups` (not on the edge) is what makes
-“platform_default applies to everyone” expressible at all: the access query
-can test `g.platform_default = 1` without joining any membership row.
-Django hides this table behind `ManyToManyField`; rbac-go declares it
-because every table here is explicit, portable DDL.
-
-## 4. Where the pieces live
+## 3. Where the pieces live
 
 * Identity parsing: `internal/identity` (+ `SPEC.md` §4).
 * Join + filters + pagination: `internal/access`.
