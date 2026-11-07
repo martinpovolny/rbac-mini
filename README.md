@@ -13,7 +13,7 @@ deliberately left out.
 
 ## What it implements
 
-All under `/api/rbac/v1/` (see `doc/openapi.v1-subset.json` for the contract):
+All under `/api/rbac/v1/` ([interactive ReDoc](https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/martinpovolny/rbac-mini/master/doc/openapi.v1-subset.json), live from `doc/openapi.v1-subset.json` on main):
 
 | Endpoint | Used by |
 |---|---|
