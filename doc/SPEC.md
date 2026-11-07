@@ -173,10 +173,15 @@ transaction); the read path takes no locks.
 Placeholder policy: write queries once with `?` placeholders and rebind to
 `$n` for Postgres (e.g. `sqlx.Rebind`), so the same query text runs on both.
 
-Seed data: `public` tenant + `Cost Administrator` (`cost-management:*:*`),
-`Sources administrator`, platform-default viewer roles — same permission
-strings as [operator/internal/resources/rbac_seed/data/*.json](https://github.com/project-koku/koku-service-operator/tree/main/internal/resources/rbac_seed/data/). Seed job must be
-idempotent (`get_or_create` semantics).
+Seed data: `public` tenant + `Cost Administrator` (`cost-management:*:*`)
+and `Sources administrator`, both `admin_default`, plus the public
+`Default admin access` group that links them (Django's `seed_group()`
+parity, so an org admin gets access without explicit membership), and the
+granular permission catalog the role wizard lists. Same permission strings
+as [operator/internal/resources/rbac_seed/data/*.json](https://github.com/project-koku/koku-service-operator/tree/main/internal/resources/rbac_seed/data/).
+The seed job must be idempotent (`get_or_create` semantics) and must upgrade
+rows seeded before a flag existed (the code issues an `UPDATE` after
+`INSERT ... ON CONFLICT DO NOTHING`).
 
 ## 4. Identity Header
 
@@ -201,8 +206,12 @@ empty access (matches bootstrap behavior).
   upsert `principals` with their profile (`email`, names, `enabled`) and the
   realm role named by `SYNC_ORG_ADMIN_SUBGROUP` (default `org-admin`; in
   rbac-go the value is the realm role, not the nested group the Django script
-  logs), add to org group, `SYNC_PRUNE_ORPHANS` deletes stale rows. A 403 on
-  the role lookup keeps the user sync and leaves `is_org_admin` false. Disabled users are
+  logs), add to `SYNC_GROUP` when set (empty by default: principals only,
+  access comes from the platform/admin default groups), `SYNC_PRUNE_ORPHANS`
+  deletes stale rows. A 403 on the role lookup keeps the user sync and leaves
+  `is_org_admin` false. The Keycloak client needs `realm-management`
+  `view-realm`, `view-users`, `query-groups`, and the `roles` and
+  `kc-admin-api` client scopes; without the latter Keycloak answers 401. Disabled users are
   kept: they still exist, keep group bindings, and can be re-enabled; the API
   hides them with the default `status=enabled` filter. This replaces the
   separate `principal-profile` sidecar — Keycloak is read only by the sync.

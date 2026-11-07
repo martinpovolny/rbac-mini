@@ -18,8 +18,8 @@ oc -n cost-byoi get costmanagementserviceconfig  # note the CR name
 ```bash
 cd /Users/martinpovolny/Projects/koku/insights-rbac/rbac-go
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t quay.io/martin_povolny/rbac-go:v0.2.0 --push .
-docker buildx imagetools inspect quay.io/martin_povolny/rbac-go:v0.2.0
+  -t quay.io/martin_povolny/rbac-go:v0.3.3 --push .
+docker buildx imagetools inspect quay.io/martin_povolny/rbac-go:v0.3.3
 # expect: linux/amd64 + linux/arm64 manifests
 ```
 
@@ -49,7 +49,7 @@ oc -n cost-operator rollout status deployment/<operator-deploy>
 ```bash
 CR=<cr-name>   # from step 0
 oc -n cost-byoi patch costmanagementserviceconfig $CR --type=merge \
-  -p '{"spec":{"rbac":{"backend":"go","image":{"repository":"quay.io/martin_povolny/rbac-go","tag":"v0.2.0"}}}}'
+  -p '{"spec":{"rbac":{"backend":"go","image":{"repository":"quay.io/martin_povolny/rbac-go","tag":"v0.3.3"}}}}'
 ```
 
 Watch the rollout (no worker expected):
@@ -109,6 +109,46 @@ Verified live 2026-11-06 (both directions). Caveats found while testing:
 * Test-only rows (org `99999` tenant `org99999`, principal `testlive`) remain
   in `costonprem_rbac`; harmless, no cleanup job exists for them.
 ```
+
+## 2026-11-07: principal profiles and the RBAC UI (v0.3.3)
+
+Repeated the flip on CRC to validate COST-8167 end to end
+(`backend: go`, `quay.io/martin_povolny/rbac-go:v0.3.3`).
+
+Keycloak sync client prerequisites found on this cluster — the
+`rbac-keycloak-sync` service account had no roles, so the first CronJob run
+failed with `401 Unauthorized`:
+
+* Realm-management client roles: `view-realm`, `view-users`, `query-groups`.
+* Client scopes `roles` (emits `resource_access` claims) and `kc-admin-api`
+  (adds the admin-API audience). Without these the service-account token has
+  no role claims and Keycloak rejects `/admin/realms/<realm>/…` with 401,
+  even though the role mappings exist.
+
+Seed fixes needed for the UI:
+
+* The public `Default admin access` group now exists and the two seeded roles
+  are `admin_default`, so an org admin with no explicit group gets
+  `cost-management:*:*` and `sources:*:*` from `/access/`.
+* The granular permission catalog is seeded, so the role wizard
+  (`allowed_only=true&exclude_globals=true`) lists permissions and custom
+  roles can be created.
+* `SYNC_GROUP` defaults to empty. The operator CronJob sets no value, so the
+  previous `CI Test Admin` default failed every sync with `unknown group`.
+
+Verified through the UI route `https://cost-management-ui-cost-byoi.apps-crc.testing`
+as Keycloak user `admin` (realm role `org-admin`, password `admin`):
+
+| Check | Result |
+|---|---|
+| Users list | `admin`, Active, Org. Administrator Yes, `admin@test.com`, names Admin/User |
+| `?usernames=admin` detail | same row, `meta.count=1` (200) |
+| `/access/?application=cost-management` | `cost-management:*:*` |
+| `/access/?application=sources` | `sources:*:*` |
+| Roles | list, create custom role, read access, delete |
+| Groups | create, add member, assign role, member/role lists, delete |
+| Permissions | `exclude_globals=true` returns 12 entries; options return `cost-management,sources` |
+| Keycloak sync CronJob | manual job succeeds; principal `admin` has email, names, Keycloak id, `is_org_admin=1`, `is_active=1` |
 
 ## Notes
 
