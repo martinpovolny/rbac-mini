@@ -62,6 +62,17 @@ Step by step:
    legacy `cost-management:rate:*` means `cost_model`; write implies read.
    Full rules: `doc/KOKU-NEEDS.md` §2.
 
+   **Permission notation.** Every grant is an `application:resource:verb`
+   triple. `sources:*:*` reads as application=`sources`,
+   resource_type=`*` (any), verb=`*` (any) — i.e. "do anything in sources".
+   RBAC stores and serves it verbatim; koku rewrites the middle segment to
+   `sources:sources:*` before bucketing so it lands in the flat `sources`
+   bucket instead of the `*` wildcard bucket (which would fan out across
+   *every* resource type). Other examples: `cost-management:aws.account:read`
+   (read AWS accounts), `cost-management:*:*` (everything in
+   cost-management). See `doc/KOKU-NEEDS.md` §2 and
+   `internal/contract.NormalizeSourcesACL`.
+
 ## 2. The data path (one query)
 
 `GET /access/` resolves in a single join (`internal/access`; full schema with

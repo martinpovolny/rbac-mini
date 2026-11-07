@@ -71,8 +71,18 @@ internal/contract/ koku acl-mapping port (normalize/process/apply, incl. OCP inh
 internal/server/   HTTP handlers (v1 envelopes, 400/401/404 shapes)
 internal/store/    portable DDL (? placeholders, rebound to $n for Postgres)
 internal/testdb/  per-test isolated DBs (SQLite :memory: or fresh PG database)
-doc/               SPEC, ERD, openapi subset, operator swap + live-test runbooks
 ```
+
+## Documentation
+
+* [Request guide](doc/GUIDE.md) — Keycloak → koku → rbac-go → DB chain, with diagrams
+* [What koku needs](doc/KOKU-NEEDS.md) — the exact call contract, permission vocabulary, and koku-side mapping rules
+* [SPEC](doc/SPEC.md) — scope, API contract, portable-SQL rules, acceptance criteria
+* [ERD](doc/ERD.md) — mermaid ER diagram of the 10-table schema
+* [OpenAPI subset](doc/openapi.v1-subset.json) (+ [live ReDoc](https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/martinpovolny/rbac-mini/master/doc/openapi.v1-subset.json))
+* [Findings](doc/FINDINGS.md) — investigation notes (Celery, cross-account, entrypoint, operator contract, Keycloak sync, seeds, UI surface)
+* [Operator swap](doc/OPERATOR-SWAP.md) — `spec.rbac.backend` plan and rollout deltas
+* [Live-cluster test](doc/LIVE-CLUSTER-TEST.md) — CRC runbook, evidence, rollback caveats
 
 ## Deploying
 
