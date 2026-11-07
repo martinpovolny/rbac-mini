@@ -188,7 +188,7 @@ func unknownStubs(usernames []string, found map[string]bool,
 				if !strings.HasPrefix(strings.ToLower(stub.Email), strings.ToLower(email)) {
 					continue
 				}
-			} else if strings.ToLower(stub.Email) != strings.ToLower(email) {
+			} else if !strings.EqualFold(stub.Email, email) {
 				continue
 			}
 		}
