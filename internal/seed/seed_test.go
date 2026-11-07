@@ -95,7 +95,9 @@ func TestSeedCostAdministrator(t *testing.T) {
 		t.Errorf("Default admin access roles = %d, err = %v, want 2", linked, err)
 	}
 	for _, q := range []string{
+		`SELECT created FROM roles WHERE name='Cost Administrator'`,
 		`SELECT modified FROM roles WHERE name='Cost Administrator'`,
+		`SELECT created FROM groups WHERE name='Default admin access'`,
 		`SELECT modified FROM groups WHERE name='Default admin access'`,
 	} {
 		var modified string

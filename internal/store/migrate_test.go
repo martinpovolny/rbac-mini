@@ -68,6 +68,8 @@ func TestMigrateBackfillsModified(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 	for _, q := range []string{
+		`SELECT created FROM roles WHERE uuid='r-old'`,
+		`SELECT created FROM groups WHERE uuid='g-old'`,
 		`SELECT modified FROM roles WHERE uuid='r-old'`,
 		`SELECT modified FROM groups WHERE uuid='g-old'`,
 	} {

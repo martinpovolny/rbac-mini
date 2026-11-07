@@ -20,6 +20,7 @@ type Group struct {
 	PlatformDefault bool   `json:"platform_default"`
 	AdminDefault    bool   `json:"admin_default"`
 	System          bool   `json:"system"`
+	Created         string `json:"created"`
 	Modified        string `json:"modified"`
 }
 
@@ -105,7 +106,7 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Grou
 			JOIN policy_roles pr ON pr.policy_id = pol.id
 			JOIN roles r ON r.id = pr.role_id
 			WHERE pol.group_id = g.id),
-		g.platform_default, g.admin_default, g.system, COALESCE(g.modified,'')
+		g.platform_default, g.admin_default, g.system, COALESCE(g.created,''), COALESCE(g.modified,'')
 		FROM groups g WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := db.Query(q, args...)
@@ -119,7 +120,7 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Grou
 		var desc string
 		var pd, ad, sys int
 		if err := rows.Scan(&g.UUID, &g.Name, &desc, &g.PrincipalCount, &g.RoleCount,
-			&pd, &ad, &sys, &g.Modified); err != nil {
+			&pd, &ad, &sys, &g.Created, &g.Modified); err != nil {
 			return nil, 0, err
 		}
 		g.Description = desc
@@ -257,7 +258,8 @@ func Roles(db *store.DB, orgID, groupUUID string, limit, offset int) (items []ro
 	if err := db.QueryRow(countQ, groupID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := db.Query(`SELECT DISTINCT r.uuid, r.name, r.display_name, r.system
+	rows, err := db.Query(`SELECT DISTINCT r.uuid, r.name, r.display_name, r.system,
+		COALESCE(r.created,''), COALESCE(r.modified,'')
 		FROM roles r
 		JOIN policy_roles pr ON pr.role_id = r.id
 		JOIN policies pol ON pol.id = pr.policy_id
@@ -270,7 +272,7 @@ func Roles(db *store.DB, orgID, groupUUID string, limit, offset int) (items []ro
 	for rows.Next() {
 		var r role.Role
 		var system int
-		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &system); err != nil {
+		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &system, &r.Created, &r.Modified); err != nil {
 			return nil, 0, err
 		}
 		r.System = system != 0
@@ -327,9 +329,10 @@ func Create(db *store.DB, orgID, name, description string) (Group, error) {
 		return Group{}, ErrReservedName{Name: name}
 	}
 	uuid := store.NewUUID()
-	_, err := db.Exec(`INSERT INTO groups(uuid, name, description, modified, tenant_id)
-		VALUES(?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
-		uuid, name, description, store.Now(), orgID)
+	now := store.Now()
+	_, err := db.Exec(`INSERT INTO groups(uuid, name, description, created, modified, tenant_id)
+		VALUES(?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
+		uuid, name, description, now, now, orgID)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return Group{}, ErrDuplicate{Name: name}
@@ -522,11 +525,11 @@ func Get(db *store.DB, orgID, uuid string) (Group, error) {
 			JOIN policy_roles pr ON pr.policy_id = pol.id
 			JOIN roles r ON r.id = pr.role_id
 			WHERE pol.group_id = g.id),
-		g.platform_default, g.admin_default, g.system, COALESCE(g.modified,'')
+		g.platform_default, g.admin_default, g.system, COALESCE(g.created,''), COALESCE(g.modified,'')
 		FROM groups g JOIN tenants t ON t.id = g.tenant_id
 		WHERE g.uuid = ? AND t.org_id = ?`,
 		uuid, orgID).Scan(&g.UUID, &g.Name, &desc, &g.PrincipalCount, &g.RoleCount,
-		&pd, &ad, &sys, &g.Modified)
+		&pd, &ad, &sys, &g.Created, &g.Modified)
 	if err != nil {
 		return Group{}, err
 	}

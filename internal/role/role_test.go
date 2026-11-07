@@ -34,9 +34,9 @@ func seedRoles(t *testing.T, db *store.DB) {
 		if r.System {
 			system = 1
 		}
-		if _, err := db.Exec(`INSERT INTO roles(uuid, name, display_name, system, modified, tenant_id)
-			VALUES(?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
-			store.NewUUID(), r.Name, r.DisplayName, system, r.Modified, r.OrgID); err != nil {
+		if _, err := db.Exec(`INSERT INTO roles(uuid, name, display_name, system, created, modified, tenant_id)
+			VALUES(?, ?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
+			store.NewUUID(), r.Name, r.DisplayName, system, r.Modified, r.Modified, r.OrgID); err != nil {
 			t.Fatalf("role %s: %v", r.Name, err)
 		}
 	}
@@ -105,12 +105,15 @@ func TestModifiedTimestamps(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	}
 	for _, item := range items {
-		if item.Modified == "" {
-			t.Errorf("role %q has no modified timestamp", item.Name)
+		if item.Modified == "" || item.Created == "" {
+			t.Errorf("role %q has no created/modified timestamp (%q/%q)", item.Name, item.Created, item.Modified)
 			continue
 		}
 		if _, err := time.Parse(time.RFC3339, item.Modified); err != nil {
 			t.Errorf("role %q modified = %q, not RFC3339: %v", item.Name, item.Modified, err)
+		}
+		if _, err := time.Parse(time.RFC3339, item.Created); err != nil {
+			t.Errorf("role %q created = %q, not RFC3339: %v", item.Name, item.Created, err)
 		}
 	}
 
@@ -139,6 +142,9 @@ func TestModifiedTimestamps(t *testing.T) {
 	}
 	if updated.Modified == "" || updated.Modified == before.Modified {
 		t.Errorf("modified after update = %q (before %q), want a new timestamp", updated.Modified, before.Modified)
+	}
+	if updated.Created != before.Created {
+		t.Errorf("created changed on update: %q -> %q", before.Created, updated.Created)
 	}
 	if _, err := time.Parse(time.RFC3339, updated.Modified); err != nil {
 		t.Errorf("updated modified = %q, not RFC3339: %v", updated.Modified, err)

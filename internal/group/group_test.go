@@ -42,9 +42,9 @@ func seedGroups(t *testing.T, db *store.DB) {
 		if g.Platform || g.Admin {
 			system = 1
 		}
-		if _, err := db.Exec(`INSERT INTO groups(uuid, name, platform_default, admin_default, system, modified, tenant_id)
-			VALUES(?, ?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
-			store.NewUUID(), g.Name, platform, admin, system, g.Modified, g.OrgID); err != nil {
+		if _, err := db.Exec(`INSERT INTO groups(uuid, name, platform_default, admin_default, system, created, modified, tenant_id)
+			VALUES(?, ?, ?, ?, ?, ?, ?, (SELECT id FROM tenants WHERE org_id=?))`,
+			store.NewUUID(), g.Name, platform, admin, system, g.Modified, g.Modified, g.OrgID); err != nil {
 			t.Fatalf("group %s: %v", g.Name, err)
 		}
 	}
@@ -143,12 +143,15 @@ func TestModifiedTimestamps(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	}
 	for _, item := range items {
-		if item.Modified == "" {
-			t.Errorf("group %q has no modified timestamp", item.Name)
+		if item.Modified == "" || item.Created == "" {
+			t.Errorf("group %q has no created/modified timestamp (%q/%q)", item.Name, item.Created, item.Modified)
 			continue
 		}
 		if _, err := time.Parse(time.RFC3339, item.Modified); err != nil {
 			t.Errorf("group %q modified = %q, not RFC3339: %v", item.Name, item.Modified, err)
+		}
+		if _, err := time.Parse(time.RFC3339, item.Created); err != nil {
+			t.Errorf("group %q created = %q, not RFC3339: %v", item.Name, item.Created, err)
 		}
 	}
 
@@ -177,6 +180,9 @@ func TestModifiedTimestamps(t *testing.T) {
 	}
 	if updated.Modified == "" || updated.Modified == created.Modified {
 		t.Errorf("modified after update = %q (before %q), want a new timestamp", updated.Modified, created.Modified)
+	}
+	if updated.Created != created.Created {
+		t.Errorf("created changed on update: %q -> %q", created.Created, updated.Created)
 	}
 	got, err := Get(db, "100001", created.UUID)
 	if err != nil {

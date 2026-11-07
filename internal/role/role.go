@@ -17,6 +17,7 @@ type Role struct {
 	DisplayName string         `json:"display_name"`
 	Description string         `json:"description,omitempty"`
 	System      bool           `json:"system"`
+	Created     string         `json:"created"`
 	Modified    string         `json:"modified"`
 	Access      []access.Entry `json:"access,omitempty"`
 	PolicyCount int            `json:"policyCount,omitempty"`
@@ -99,9 +100,10 @@ func Create(db *store.DB, orgID, name, displayName, description string, grants [
 	if err := tx.QueryRow(`SELECT id FROM tenants WHERE org_id=?`, orgID).Scan(&tenantID); err != nil {
 		return Role{}, err
 	}
-	if _, err := tx.Exec(`INSERT INTO roles(uuid, name, display_name, description, modified, tenant_id)
-		VALUES(?, ?, ?, ?, ?, ?) ON CONFLICT(name, tenant_id) DO NOTHING`,
-		uuid, name, displayName, description, store.Now(), tenantID); err != nil {
+	now := store.Now()
+	if _, err := tx.Exec(`INSERT INTO roles(uuid, name, display_name, description, created, modified, tenant_id)
+		VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(name, tenant_id) DO NOTHING`,
+		uuid, name, displayName, description, now, now, tenantID); err != nil {
 		return Role{}, err
 	}
 	var roleID int64
@@ -203,7 +205,7 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Role
 		return nil, 0, err
 	}
 	q := `SELECT r.uuid, r.name, r.display_name, COALESCE(r.description,''), r.system,
-		COALESCE(r.modified,'')
+		COALESCE(r.created,''), COALESCE(r.modified,'')
 		FROM roles r JOIN tenants t ON t.id = r.tenant_id
 		WHERE` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -217,7 +219,7 @@ func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Role
 		var r Role
 		var system int
 		var desc string
-		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &desc, &system, &r.Modified); err != nil {
+		if err := rows.Scan(&r.UUID, &r.Name, &r.DisplayName, &desc, &system, &r.Created, &r.Modified); err != nil {
 			return nil, 0, err
 		}
 		if desc != "" {
@@ -235,10 +237,11 @@ func Get(db *store.DB, orgID, uuid string) (Role, error) {
 	var system int
 	var tenantID int64
 	err := db.QueryRow(`SELECT r.uuid, r.name, r.display_name,
-			COALESCE(r.description,''), r.system, COALESCE(r.modified,''), r.tenant_id
+			COALESCE(r.description,''), r.system, COALESCE(r.created,''), COALESCE(r.modified,''), r.tenant_id
 		FROM roles r JOIN tenants t ON t.id = r.tenant_id
 		WHERE r.uuid = ? AND (t.org_id = ? OR t.tenant_name = 'public')`,
-		uuid, orgID).Scan(&r.UUID, &r.Name, &r.DisplayName, &r.Description, &system, &r.Modified, &tenantID)
+		uuid, orgID).Scan(&r.UUID, &r.Name, &r.DisplayName, &r.Description, &system,
+		&r.Created, &r.Modified, &tenantID)
 	if err != nil {
 		return Role{}, err
 	}

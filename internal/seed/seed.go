@@ -99,14 +99,15 @@ func Seed(db *store.DB) error {
 func seedDefaultAdminGroup(tx *store.Tx, tenantID int64) error {
 	groupID, err := getOrCreate(tx,
 		`SELECT id FROM groups WHERE name=? AND tenant_id=?`, []any{defaultAdminGroup, tenantID},
-		`INSERT INTO groups(uuid, name, description, system, admin_default, modified, tenant_id)
-		 VALUES(?, ?, 'This group contains the roles that all org admin users inherit by default.', 1, 1, ?, ?)
-		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), defaultAdminGroup, store.Now(), tenantID)
+		`INSERT INTO groups(uuid, name, description, system, admin_default, created, modified, tenant_id)
+		 VALUES(?, ?, 'This group contains the roles that all org admin users inherit by default.', 1, 1, ?, ?, ?)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), defaultAdminGroup, store.Now(), store.Now(), tenantID)
 	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`UPDATE groups SET admin_default=1, system=1,
-		modified=COALESCE(NULLIF(modified,''), ?) WHERE id=?`, store.Now(), groupID); err != nil {
+		created=COALESCE(NULLIF(created,''), ?),
+		modified=COALESCE(NULLIF(modified,''), ?) WHERE id=?`, store.Now(), store.Now(), groupID); err != nil {
 		return err
 	}
 	policyID, err := getOrCreate(tx,
@@ -139,17 +140,18 @@ func seedRole(tx *store.Tx, tenantID int64, name, permission string) error {
 	}
 	roleID, err := getOrCreate(tx,
 		`SELECT id FROM roles WHERE name=? AND tenant_id=?`, []any{name, tenantID},
-		`INSERT INTO roles(uuid, name, display_name, system, modified, tenant_id)
-		 VALUES(?, ?, ?, 1, ?, ?)
-		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), name, name, store.Now(), tenantID)
+		`INSERT INTO roles(uuid, name, display_name, system, created, modified, tenant_id)
+		 VALUES(?, ?, ?, 1, ?, ?, ?)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), name, name, store.Now(), store.Now(), tenantID)
 	if err != nil {
 		return err
 	}
 	// Existing databases predate the admin_default flag; the operator seed
 	// data marks both roles admin_default, so upgrade the row in place.
 	if _, err := tx.Exec(`UPDATE roles SET admin_default=1, platform_default=0, system=1,
-		display_name=?, modified=COALESCE(NULLIF(modified,''), ?) WHERE id=?`,
-		name, store.Now(), roleID); err != nil {
+		display_name=?, created=COALESCE(NULLIF(created,''), ?),
+		modified=COALESCE(NULLIF(modified,''), ?) WHERE id=?`,
+		name, store.Now(), store.Now(), roleID); err != nil {
 		return err
 	}
 	permID, err := getOrCreate(tx,
@@ -194,9 +196,9 @@ func Bootstrap(db *store.DB, orgID, accountID string, usernames []string) error 
 	}
 	groupID, err := getOrCreate(tx,
 		`SELECT id FROM groups WHERE name='CI Test Admin' AND tenant_id=?`, []any{tenantID},
-		`INSERT INTO groups(uuid, name, description, system, modified, tenant_id)
-		 VALUES(?, 'CI Test Admin', 'CI service account admin access', 1, ?, ?)
-		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), store.Now(), tenantID)
+		`INSERT INTO groups(uuid, name, description, system, created, modified, tenant_id)
+		 VALUES(?, 'CI Test Admin', 'CI service account admin access', 1, ?, ?, ?)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), store.Now(), store.Now(), tenantID)
 	if err != nil {
 		return err
 	}

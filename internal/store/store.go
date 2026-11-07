@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS groups (
   platform_default INTEGER NOT NULL DEFAULT 0,
   system INTEGER NOT NULL DEFAULT 0,
   admin_default INTEGER NOT NULL DEFAULT 0,
+  created TEXT,
   modified TEXT,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   UNIQUE (name, tenant_id)
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS roles (
   system INTEGER NOT NULL DEFAULT 0,
   platform_default INTEGER NOT NULL DEFAULT 0,
   admin_default INTEGER NOT NULL DEFAULT 0,
+  created TEXT,
   modified TEXT,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   UNIQUE (name, tenant_id)
@@ -263,7 +265,9 @@ func Migrate(db *DB) error {
 		`ALTER TABLE principals ADD COLUMN is_org_admin INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE principals ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`,
 		// "Last modified" in the RBAC UI (groups, roles, user roles).
+		`ALTER TABLE roles ADD COLUMN created TEXT`,
 		`ALTER TABLE roles ADD COLUMN modified TEXT`,
+		`ALTER TABLE groups ADD COLUMN created TEXT`,
 		`ALTER TABLE groups ADD COLUMN modified TEXT`,
 	}
 	for _, stmt := range backfills {
@@ -271,6 +275,7 @@ func Migrate(db *DB) error {
 	}
 	now := Now()
 	for _, table := range []string{"roles", "groups"} {
+		_, _ = db.Exec(`UPDATE `+table+` SET created=? WHERE created IS NULL OR created=''`, now)
 		_, _ = db.Exec(`UPDATE `+table+` SET modified=? WHERE modified IS NULL OR modified=''`, now)
 	}
 	return nil

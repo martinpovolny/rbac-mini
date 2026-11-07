@@ -66,6 +66,12 @@ use the existing entry points and note the measured commit in `ENV.txt`; see
 
 * Portable SQL only: write `?` placeholders and let the store rebind them for
   Postgres. No `DISTINCT ON`, `RETURNING`, JSON operators or `ILIKE`.
+* Timestamps are fixed-width UTC TEXT via `store.Now()`; set `created` on
+  insert and `modified` on create/update, and return both where the v1 shape
+  has them (roles, groups).
+* List filters mirror Django: `name_match=partial|exact` (partial default),
+  case-insensitive matching, and explicit default-group probes override the
+  default exclusion. Validate enums and return 400 instead of ignoring them.
 * Every query is tenant-scoped. Never return rows from another tenant.
 * `internal/access` always includes the public tenant's platform-default
   groups; admin-default groups only for org admins.
