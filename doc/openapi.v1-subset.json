@@ -827,7 +827,14 @@
         },
         "responses": {
           "200": {
-            "description": "Role updated"
+            "description": "Updated role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleWithAccess"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
