@@ -16,7 +16,8 @@ func testDB(t *testing.T) *store.DB {
 func counts(t *testing.T, db *store.DB) map[string]int {
 	t.Helper()
 	out := map[string]int{}
-	for _, table := range []string{"tenants", "roles", "permissions", "access", "resource_definitions"} {
+	for _, table := range []string{"tenants", "roles", "permissions", "access", "resource_definitions",
+		"groups", "policies", "policy_roles"} {
 		var n int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
 			t.Fatalf("count %s: %v", table, err)
@@ -61,6 +62,50 @@ func TestSeedCostAdministrator(t *testing.T) {
 	if sourcesPerm != "sources:*:*" {
 		t.Errorf("permission = %q, want %q", sourcesPerm, "sources:*:*")
 	}
+
+	// Both roles carry admin_default, and the public "Default admin access"
+	// group links them (Django seed_group parity).
+	for _, name := range []string{"Cost Administrator", "Sources administrator"} {
+		var adminDefault int
+		if err := db.QueryRow(`SELECT admin_default FROM roles WHERE name=?`, name).Scan(&adminDefault); err != nil || adminDefault != 1 {
+			t.Errorf("role %q admin_default = %d, err = %v, want 1", name, adminDefault, err)
+		}
+	}
+	var adminDefaultGroup int
+	if err := db.QueryRow(`SELECT admin_default FROM groups WHERE name='Default admin access'`).Scan(&adminDefaultGroup); err != nil || adminDefaultGroup != 1 {
+		t.Fatalf("Default admin access admin_default = %d, err = %v, want 1", adminDefaultGroup, err)
+	}
+	var linked int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM policy_roles pr
+		JOIN policies p ON p.id = pr.policy_id
+		WHERE p.name='Default admin access'`).Scan(&linked); err != nil || linked != 2 {
+		t.Errorf("Default admin access roles = %d, err = %v, want 2", linked, err)
+	}
+
+	// An org admin with no explicit group gets the admin_default grants; a
+	// regular user in the same tenant gets none until someone adds them.
+	if _, err := db.Exec(`INSERT INTO tenants(org_id, tenant_name, ready) VALUES('200002','acct',1)`); err != nil {
+		t.Fatalf("tenant: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO principals(uuid, username, tenant_id)
+		SELECT 'pu-viewer', 'viewer', id FROM tenants WHERE org_id='200002'`); err != nil {
+		t.Fatalf("principal: %v", err)
+	}
+	adminAccess, err := access.Query(db, "200002", "viewer", []string{"cost-management"}, true)
+	if err != nil {
+		t.Fatalf("admin Query: %v", err)
+	}
+	if len(adminAccess) != 1 || adminAccess[0].Permission != "cost-management:*:*" {
+		t.Errorf("org admin access = %v, want [cost-management:*:*]", adminAccess)
+	}
+	userAccess, err := access.Query(db, "200002", "viewer", []string{"cost-management"}, false)
+	if err != nil {
+		t.Fatalf("user Query: %v", err)
+	}
+	if len(userAccess) != 0 {
+		t.Errorf("non-admin access = %v, want empty", userAccess)
+	}
+
 	first := counts(t, db)
 
 	if err := Seed(db); err != nil {

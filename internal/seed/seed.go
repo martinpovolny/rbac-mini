@@ -16,6 +16,11 @@ var adminRoles = []struct{ name, permission string }{
 	{"Sources administrator", "sources:*:*"},
 }
 
+// defaultAdminGroup is the public tenant group Django's seed_group() creates
+// for every admin_default role; org admins inherit it through the identity
+// header's is_org_admin (access.Query's admin clause).
+const defaultAdminGroup = "Default admin access"
+
 // Seed loads the on-prem role/permission set (mirrors
 // operator/internal/resources/rbac_seed/data/*.json plus
 // `manage.py seeds --skip-notifications`). Idempotent: safe to run on every
@@ -43,7 +48,49 @@ func Seed(db *store.DB) error {
 			return err
 		}
 	}
+	if err := seedDefaultAdminGroup(tx, tenantID); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// seedDefaultAdminGroup mirrors Django's seed_group(): one public tenant
+// group carrying every admin_default role. Without it an org admin — who has
+// no explicit group membership — gets an empty /access/ and the UI hides
+// everything. Idempotent, including on databases seeded before the group
+// existed.
+func seedDefaultAdminGroup(tx *store.Tx, tenantID int64) error {
+	groupID, err := getOrCreate(tx,
+		`SELECT id FROM groups WHERE name=? AND tenant_id=?`, []any{defaultAdminGroup, tenantID},
+		`INSERT INTO groups(uuid, name, description, system, admin_default, tenant_id)
+		 VALUES(?, ?, 'This group contains the roles that all org admin users inherit by default.', 1, 1, ?)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), defaultAdminGroup, tenantID)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE groups SET admin_default=1, system=1 WHERE id=?`, groupID); err != nil {
+		return err
+	}
+	policyID, err := getOrCreate(tx,
+		`SELECT id FROM policies WHERE name=? AND tenant_id=?`, []any{defaultAdminGroup, tenantID},
+		`INSERT INTO policies(uuid, name, group_id, system, tenant_id)
+		 VALUES(?, ?, ?, 1, ?)
+		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), defaultAdminGroup, groupID, tenantID)
+	if err != nil {
+		return err
+	}
+	for _, role := range adminRoles {
+		var roleID int64
+		if err := tx.QueryRow(`SELECT id FROM roles WHERE name=? AND tenant_id=?`,
+			role.name, tenantID).Scan(&roleID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO policy_roles(policy_id, role_id)
+			VALUES(?, ?) ON CONFLICT(policy_id, role_id) DO NOTHING`, policyID, roleID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // seedRole upserts one system role with a single permission grant.
@@ -58,6 +105,12 @@ func seedRole(tx *store.Tx, tenantID int64, name, permission string) error {
 		 VALUES(?, ?, ?, 1, ?)
 		 ON CONFLICT(name, tenant_id) DO NOTHING`, store.NewUUID(), name, name, tenantID)
 	if err != nil {
+		return err
+	}
+	// Existing databases predate the admin_default flag; the operator seed
+	// data marks both roles admin_default, so upgrade the row in place.
+	if _, err := tx.Exec(`UPDATE roles SET admin_default=1, platform_default=0, system=1,
+		display_name=? WHERE id=?`, name, roleID); err != nil {
 		return err
 	}
 	permID, err := getOrCreate(tx,
