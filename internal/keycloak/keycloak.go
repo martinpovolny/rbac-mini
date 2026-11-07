@@ -28,16 +28,25 @@ type Config struct {
 	// Group is the tenant group synced users are added to. Empty means no
 	// group assignment (principals only, as in sync_keycloak_principals.py).
 	Group string
+	// OrgAdminRole is the realm role that marks org administrators. It is the
+	// same role the principal-profile sidecar read, and defaults to
+	// "org-admin".
+	OrgAdminRole string
 	// PruneOrphans deletes tenant principals gone from Keycloak.
 	PruneOrphans bool
 }
 
 // Sync lists realm users via client-credentials and upserts them as tenant
-// principals (lowercased usernames), adding them to Group. With PruneOrphans,
-// tenant principals no longer present in Keycloak are deleted. Without OrgID,
-// orgs are discovered from Keycloak groups with OrgGroupPrefix.
+// principals (lowercased usernames) with their Keycloak profile (email,
+// names, enabled, org-admin), adding them to Group. With PruneOrphans, tenant
+// principals no longer present in Keycloak are deleted. Without OrgID, orgs
+// are discovered from Keycloak groups with OrgGroupPrefix.
 func Sync(db *store.DB, cfg Config) error {
 	token, err := fetchToken(cfg)
+	if err != nil {
+		return err
+	}
+	admins, err := fetchOrgAdmins(cfg, token)
 	if err != nil {
 		return err
 	}
@@ -46,7 +55,7 @@ func Sync(db *store.DB, cfg Config) error {
 		if err != nil {
 			return err
 		}
-		return applyOrg(db, cfg, cfg.OrgID, "", users)
+		return applyOrg(db, cfg, cfg.OrgID, "", users, admins)
 	}
 	groups, err := listGroups(cfg, token)
 	if err != nil {
@@ -57,7 +66,7 @@ func Sync(db *store.DB, cfg Config) error {
 		if err != nil {
 			return err
 		}
-		if err := applyOrg(db, cfg, g.OrgID, g.AccountNumber, members); err != nil {
+		if err := applyOrg(db, cfg, g.OrgID, g.AccountNumber, members, admins); err != nil {
 			return err
 		}
 	}
@@ -111,17 +120,72 @@ func fetchUsers(cfg Config, token string) ([]kcUser, error) {
 	return users, nil
 }
 
-// kcUser mirrors the Keycloak user fields the sync needs.
+// kcUser mirrors the Keycloak user fields the sync persists.
 type kcUser struct {
-	Username string
-	Enabled  *bool
+	ID        string
+	Username  string
+	Email     string
+	FirstName string
+	LastName  string
+	Enabled   *bool
 }
 
+// usable skips service-account clients. Disabled users are kept: they still
+// exist, keep their group bindings, and can be re-enabled.
 func (u kcUser) usable() bool {
-	if strings.HasPrefix(strings.ToLower(u.Username), "service-account-") {
-		return false
-	}
+	return u.Username != "" && !strings.HasPrefix(strings.ToLower(u.Username), "service-account-")
+}
+
+// active defaults to true when Keycloak omits the flag.
+func (u kcUser) active() bool {
 	return u.Enabled == nil || *u.Enabled
+}
+
+// fetchOrgAdmins lists the members of the org-admin realm role. A realm
+// without the role has no org admins rather than a sync failure.
+func fetchOrgAdmins(cfg Config, token string) (map[string]bool, error) {
+	role := cfg.OrgAdminRole
+	if role == "" {
+		role = "org-admin"
+	}
+	out := map[string]bool{}
+	for first := 0; ; first += 100 {
+		u := "/admin/realms/" + cfg.Realm + "/roles/" + url.PathEscape(role) +
+			"/users?first=" + strconv.Itoa(first) + "&max=100"
+		resp, err := keycloakGet(cfg, token, u)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			resp.Body.Close()
+			return out, nil
+		}
+		if resp.StatusCode != http.StatusOK {
+			detail, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+			resp.Body.Close()
+			return nil, fmt.Errorf("org-admin role users: %s: %s", resp.Status, detail)
+		}
+		var body []struct {
+			Username string `json:"username"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			resp.Body.Close()
+			return nil, err
+		}
+		resp.Body.Close()
+		if len(body) == 0 {
+			break
+		}
+		for _, user := range body {
+			if user.Username != "" {
+				out[strings.ToLower(user.Username)] = true
+			}
+		}
+		if len(body) < 100 {
+			break
+		}
+	}
+	return out, nil
 }
 
 type kcGroup struct {
@@ -201,8 +265,12 @@ func fetchGroupMembers(cfg Config, token, groupID string) ([]kcUser, error) {
 			return nil, err
 		}
 		var body []struct {
-			Username string `json:"username"`
-			Enabled  *bool  `json:"enabled"`
+			ID        string `json:"id"`
+			Username  string `json:"username"`
+			Email     string `json:"email"`
+			FirstName string `json:"firstName"`
+			LastName  string `json:"lastName"`
+			Enabled   *bool  `json:"enabled"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 			resp.Body.Close()
@@ -213,7 +281,10 @@ func fetchGroupMembers(cfg Config, token, groupID string) ([]kcUser, error) {
 			break
 		}
 		for _, m := range body {
-			out = append(out, kcUser{Username: m.Username, Enabled: m.Enabled})
+			out = append(out, kcUser{
+				ID: m.ID, Username: m.Username, Email: m.Email,
+				FirstName: m.FirstName, LastName: m.LastName, Enabled: m.Enabled,
+			})
 		}
 		if len(body) < 100 {
 			break
@@ -240,8 +311,12 @@ func fetchUserPage(cfg Config, token string, first int) ([]kcUser, error) {
 		return nil, fmt.Errorf("users endpoint: %s: %s", resp.Status, detail)
 	}
 	var body []struct {
-		Username string `json:"username"`
-		Enabled  *bool  `json:"enabled"`
+		ID        string `json:"id"`
+		Username  string `json:"username"`
+		Email     string `json:"email"`
+		FirstName string `json:"firstName"`
+		LastName  string `json:"lastName"`
+		Enabled   *bool  `json:"enabled"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, err
@@ -249,7 +324,10 @@ func fetchUserPage(cfg Config, token string, first int) ([]kcUser, error) {
 	out := make([]kcUser, 0, len(body))
 	for _, user := range body {
 		if user.Username != "" {
-			out = append(out, kcUser{Username: user.Username, Enabled: user.Enabled})
+			out = append(out, kcUser{
+				ID: user.ID, Username: user.Username, Email: user.Email,
+				FirstName: user.FirstName, LastName: user.LastName, Enabled: user.Enabled,
+			})
 		}
 	}
 	return out, nil
@@ -258,7 +336,7 @@ func fetchUserPage(cfg Config, token string, first int) ([]kcUser, error) {
 // applyOrg ensures the tenant and upserts its principals (mirrors sync()).
 // Principals join cfg.Group only when set; the Keycloak discovery path syncs
 // principals without group assignment, like the Django script.
-func applyOrg(db *store.DB, cfg Config, orgID, accountNumber string, users []kcUser) error {
+func applyOrg(db *store.DB, cfg Config, orgID, accountNumber string, users []kcUser, admins map[string]bool) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -294,13 +372,21 @@ func applyOrg(db *store.DB, cfg Config, orgID, accountNumber string, users []kcU
 		}
 		username := strings.ToLower(u.Username)
 		seen[username] = true
+		active, admin := 0, 0
+		if u.active() {
+			active = 1
+		}
+		if admins[username] {
+			admin = 1
+		}
 		var principalID int64
 		err := tx.QueryRow(`SELECT id FROM principals WHERE username=? AND tenant_id=?`,
 			username, tenantID).Scan(&principalID)
 		if err == sql.ErrNoRows {
-			if _, err := tx.Exec(`INSERT INTO principals(uuid, username, type, tenant_id)
-				VALUES(?, ?, 'user', ?) ON CONFLICT(username, tenant_id) DO NOTHING`,
-				store.NewUUID(), username, tenantID); err != nil {
+			if _, err := tx.Exec(`INSERT INTO principals(uuid, username, type, user_id, email,
+				first_name, last_name, is_org_admin, is_active, tenant_id)
+				VALUES(?, ?, 'user', ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(username, tenant_id) DO NOTHING`,
+				store.NewUUID(), username, u.ID, u.Email, u.FirstName, u.LastName, admin, active, tenantID); err != nil {
 				return err
 			}
 			if err := tx.QueryRow(`SELECT id FROM principals WHERE username=? AND tenant_id=?`,
@@ -308,6 +394,14 @@ func applyOrg(db *store.DB, cfg Config, orgID, accountNumber string, users []kcU
 				return err
 			}
 		} else if err != nil {
+			return err
+		}
+		// Keycloak stays the source of truth for every profile field. An empty
+		// user id (tests, partial representations) keeps the stored one.
+		if _, err := tx.Exec(`UPDATE principals SET
+			user_id=COALESCE(NULLIF(?, ''), user_id), email=?, first_name=?, last_name=?,
+			is_org_admin=?, is_active=? WHERE id=?`,
+			u.ID, u.Email, u.FirstName, u.LastName, admin, active, principalID); err != nil {
 			return err
 		}
 		if cfg.Group != "" {

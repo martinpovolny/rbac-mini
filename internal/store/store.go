@@ -49,6 +49,11 @@ CREATE TABLE IF NOT EXISTS principals (
   type TEXT NOT NULL DEFAULT 'user',
   service_account_id TEXT,
   user_id TEXT,
+  email TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  is_org_admin INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
   cross_account INTEGER NOT NULL DEFAULT 0,
   tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   UNIQUE (username, tenant_id)
@@ -237,6 +242,18 @@ func Migrate(db *DB) error {
 	// Backfill columns added after the initial schema for databases created
 	// before them (CREATE TABLE IF NOT EXISTS never alters). Errors are
 	// ignored: the only expected failure is "column already exists".
-	_, _ = db.Exec(`ALTER TABLE roles ADD COLUMN description TEXT`)
+	backfills := []string{
+		`ALTER TABLE roles ADD COLUMN description TEXT`,
+		// Keycloak profile fields: the sync is the only component allowed to
+		// read Keycloak, so the API serves them from here (SPEC §5).
+		`ALTER TABLE principals ADD COLUMN email TEXT`,
+		`ALTER TABLE principals ADD COLUMN first_name TEXT`,
+		`ALTER TABLE principals ADD COLUMN last_name TEXT`,
+		`ALTER TABLE principals ADD COLUMN is_org_admin INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE principals ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`,
+	}
+	for _, stmt := range backfills {
+		_, _ = db.Exec(stmt)
+	}
 	return nil
 }
