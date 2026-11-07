@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="700" viewBox="0 0 960 700">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="80.0" y="28.0" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" text-anchor="start" fill="#1a202c">GET /api/…/v1/access/ — koku critical path</text>
+<text x="80.0" y="48.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#4a5568">host process, no containers; 100 users, concurrency 20, 5000 requests per run, median of 3 runs</text>
+<text x="80.0" y="76.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" text-anchor="start" fill="#1a202c">Latency (lower is better)</text>
+<rect x="738.0" y="65.0" width="12.0" height="12.0" fill="#2b6cb0"/>
+<text x="755.0" y="75.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">p50</text>
+<rect x="802.0" y="65.0" width="12.0" height="12.0" fill="#dd6b20"/>
+<text x="819.0" y="75.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">p95</text>
+<rect x="866.0" y="65.0" width="12.0" height="12.0" fill="#c53030"/>
+<text x="883.0" y="75.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">p99</text>
+<line x1="80.0" y1="320.0" x2="930.0" y2="320.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="324.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">0</text>
+<line x1="80.0" y1="276.0" x2="930.0" y2="276.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="280.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">4</text>
+<line x1="80.0" y1="232.0" x2="930.0" y2="232.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="236.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">8</text>
+<line x1="80.0" y1="188.0" x2="930.0" y2="188.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="192.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">12</text>
+<line x1="80.0" y1="144.0" x2="930.0" y2="144.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="148.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">16</text>
+<line x1="80.0" y1="100.0" x2="930.0" y2="100.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="104.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">20</text>
+<text x="72.0" y="88.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">ms</text>
+<rect x="241.5" y="278.7" width="30.0" height="41.3" fill="#2b6cb0"/>
+<text x="256.5" y="273.7" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">3.8</text>
+<rect x="277.5" y="208.8" width="30.0" height="111.2" fill="#dd6b20"/>
+<text x="292.5" y="203.8" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">10.1</text>
+<rect x="313.5" y="169.5" width="30.0" height="150.5" fill="#c53030"/>
+<text x="328.5" y="164.5" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">13.7</text>
+<text x="292.5" y="338.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go native, SQLite file DB</text>
+<rect x="666.5" y="305.0" width="30.0" height="15.0" fill="#2b6cb0"/>
+<text x="681.5" y="300.0" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">1.4</text>
+<rect x="702.5" y="284.3" width="30.0" height="35.7" fill="#dd6b20"/>
+<text x="717.5" y="279.3" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">3.2</text>
+<rect x="738.5" y="270.7" width="30.0" height="49.3" fill="#c53030"/>
+<text x="753.5" y="265.7" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">4.5</text>
+<text x="717.5" y="338.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go native, Postgres 16 on localhost</text>
+<text x="80.0" y="396.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" text-anchor="start" fill="#1a202c">Throughput (higher is better)</text>
+<rect x="866.0" y="385.0" width="12.0" height="12.0" fill="#2f855a"/>
+<text x="883.0" y="395.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">req/s</text>
+<line x1="80.0" y1="640.0" x2="930.0" y2="640.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="644.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">0</text>
+<line x1="80.0" y1="596.0" x2="930.0" y2="596.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="600.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">4000</text>
+<line x1="80.0" y1="552.0" x2="930.0" y2="552.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="556.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">8000</text>
+<line x1="80.0" y1="508.0" x2="930.0" y2="508.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="512.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">12000</text>
+<line x1="80.0" y1="464.0" x2="930.0" y2="464.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="468.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">16000</text>
+<line x1="80.0" y1="420.0" x2="930.0" y2="420.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="424.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">20000</text>
+<text x="72.0" y="408.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">req/s</text>
+<rect x="277.5" y="591.7" width="30.0" height="48.3" fill="#2f855a"/>
+<text x="292.5" y="586.7" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">4393</text>
+<text x="292.5" y="658.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go native, SQLite file DB</text>
+<rect x="702.5" y="502.3" width="30.0" height="137.7" fill="#2f855a"/>
+<text x="717.5" y="497.3" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">12516</text>
+<text x="717.5" y="658.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go native, Postgres 16 on localhost</text>
+</svg>

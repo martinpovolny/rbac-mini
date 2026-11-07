@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="700" viewBox="0 0 960 700">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="80.0" y="28.0" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" text-anchor="start" fill="#1a202c">GET /api/…/v1/access/ — koku critical path</text>
+<text x="80.0" y="48.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#4a5568">100 users, org 100001, concurrency 20, 5000 requests per run, median of 3 runs; Docker Desktop on Darwin arm64</text>
+<text x="80.0" y="76.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" text-anchor="start" fill="#1a202c">Latency (lower is better)</text>
+<rect x="738.0" y="65.0" width="12.0" height="12.0" fill="#2b6cb0"/>
+<text x="755.0" y="75.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">p50</text>
+<rect x="802.0" y="65.0" width="12.0" height="12.0" fill="#dd6b20"/>
+<text x="819.0" y="75.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">p95</text>
+<rect x="866.0" y="65.0" width="12.0" height="12.0" fill="#c53030"/>
+<text x="883.0" y="75.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">p99</text>
+<line x1="80.0" y1="320.0" x2="930.0" y2="320.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="324.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">0</text>
+<line x1="80.0" y1="276.0" x2="930.0" y2="276.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="280.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">40</text>
+<line x1="80.0" y1="232.0" x2="930.0" y2="232.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="236.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">80</text>
+<line x1="80.0" y1="188.0" x2="930.0" y2="188.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="192.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">120</text>
+<line x1="80.0" y1="144.0" x2="930.0" y2="144.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="148.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">160</text>
+<line x1="80.0" y1="100.0" x2="930.0" y2="100.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="104.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">200</text>
+<text x="72.0" y="88.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">ms</text>
+<rect x="135.2" y="299.2" width="30.0" height="20.8" fill="#2b6cb0"/>
+<text x="150.2" y="294.2" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">18.9</text>
+<rect x="171.2" y="284.1" width="30.0" height="35.9" fill="#dd6b20"/>
+<text x="186.2" y="279.1" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">32.6</text>
+<rect x="207.2" y="273.1" width="30.0" height="46.9" fill="#c53030"/>
+<text x="222.2" y="268.1" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">42.7</text>
+<text x="186.2" y="338.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">Django + Valkey (policy cache on)</text>
+<rect x="347.8" y="261.1" width="30.0" height="58.9" fill="#2b6cb0"/>
+<text x="362.8" y="256.1" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">53.5</text>
+<rect x="383.8" y="234.5" width="30.0" height="85.5" fill="#dd6b20"/>
+<text x="398.8" y="229.5" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">77.7</text>
+<rect x="419.8" y="219.6" width="30.0" height="100.4" fill="#c53030"/>
+<text x="434.8" y="214.6" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">91.2</text>
+<text x="398.8" y="338.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">Django (policy cache off)</text>
+<rect x="560.2" y="307.2" width="30.0" height="12.8" fill="#2b6cb0"/>
+<text x="575.2" y="302.2" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">11.6</text>
+<rect x="596.2" y="273.8" width="30.0" height="46.2" fill="#dd6b20"/>
+<text x="611.2" y="268.8" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">42.0</text>
+<rect x="632.2" y="262.3" width="30.0" height="57.7" fill="#c53030"/>
+<text x="647.2" y="257.3" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">52.5</text>
+<text x="611.2" y="338.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go base (no cache)</text>
+<rect x="772.8" y="316.1" width="30.0" height="3.9" fill="#2b6cb0"/>
+<text x="787.8" y="311.1" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">3.6</text>
+<rect x="808.8" y="314.7" width="30.0" height="5.3" fill="#dd6b20"/>
+<text x="823.8" y="309.7" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">4.8</text>
+<rect x="844.8" y="313.8" width="30.0" height="6.2" fill="#c53030"/>
+<text x="859.8" y="308.8" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">5.6</text>
+<text x="823.8" y="338.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go go-pool</text>
+<text x="80.0" y="396.0" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" text-anchor="start" fill="#1a202c">Throughput (higher is better)</text>
+<rect x="866.0" y="385.0" width="12.0" height="12.0" fill="#2f855a"/>
+<text x="883.0" y="395.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="start" fill="#1a202c">req/s</text>
+<line x1="80.0" y1="640.0" x2="930.0" y2="640.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="644.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">0</text>
+<line x1="80.0" y1="596.0" x2="930.0" y2="596.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="600.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">2000</text>
+<line x1="80.0" y1="552.0" x2="930.0" y2="552.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="556.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">4000</text>
+<line x1="80.0" y1="508.0" x2="930.0" y2="508.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="512.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">6000</text>
+<line x1="80.0" y1="464.0" x2="930.0" y2="464.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="468.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">8000</text>
+<line x1="80.0" y1="420.0" x2="930.0" y2="420.0" stroke="#e2e8f0" stroke-width="1"/>
+<text x="72.0" y="424.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">10000</text>
+<text x="72.0" y="408.0" font-family="Helvetica, Arial, sans-serif" font-size="11" font-weight="normal" text-anchor="end" fill="#4a5568">req/s</text>
+<rect x="171.2" y="620.4" width="30.0" height="19.6" fill="#2f855a"/>
+<text x="186.2" y="615.4" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">890</text>
+<text x="186.2" y="658.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">Django + Valkey (policy cache on)</text>
+<rect x="383.8" y="632.8" width="30.0" height="7.2" fill="#2f855a"/>
+<text x="398.8" y="627.8" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">325</text>
+<text x="398.8" y="658.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">Django (policy cache off)</text>
+<rect x="596.2" y="617.4" width="30.0" height="22.6" fill="#2f855a"/>
+<text x="611.2" y="612.4" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">1029</text>
+<text x="611.2" y="658.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go base (no cache)</text>
+<rect x="808.8" y="520.4" width="30.0" height="119.6" fill="#2f855a"/>
+<text x="823.8" y="515.4" font-family="Helvetica, Arial, sans-serif" font-size="10" font-weight="normal" text-anchor="middle" fill="#1a202c">5438</text>
+<text x="823.8" y="658.0" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" text-anchor="middle" fill="#1a202c">rbac-go go-pool</text>
+</svg>
