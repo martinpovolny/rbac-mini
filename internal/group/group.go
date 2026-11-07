@@ -22,14 +22,61 @@ type Group struct {
 	System          bool   `json:"system"`
 }
 
+// Filter mirrors the v1 group list query parameters the on-prem UI uses
+// (Django GroupFilter). NameMatch empty or "partial" is a case-insensitive
+// contains, "exact" is a case-insensitive equality.
+type Filter struct {
+	IncludeDefaults bool
+	Name            string
+	NameMatch       string
+	PlatformDefault *bool
+	AdminDefault    *bool
+	System          *bool
+}
+
 // List returns tenant groups ordered by name. Like Django's
 // _filter_default_groups, platform_default/admin_default groups are excluded
-// unless explicitly requested.
-func List(db *store.DB, orgID string, includeDefaults bool, limit, offset int) (items []Group, total int, err error) {
+// unless explicitly requested. An explicit boolean filter takes over that
+// exclusion, so ?platform_default=true returns the default group itself.
+func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Group, total int, err error) {
 	where := `g.tenant_id = (SELECT id FROM tenants WHERE org_id = ?)`
 	args := []any{orgID}
-	if !includeDefaults {
-		where += ` AND g.platform_default = 0 AND g.admin_default = 0`
+	// Exclude each default class unless that class is what was asked for. A
+	// system filter already speaks about the defaults, so it disables both.
+	if !f.IncludeDefaults && f.System == nil {
+		if f.PlatformDefault == nil {
+			where += ` AND g.platform_default = 0`
+		}
+		if f.AdminDefault == nil {
+			where += ` AND g.admin_default = 0`
+		}
+	}
+	boolInt := func(b bool) int {
+		if b {
+			return 1
+		}
+		return 0
+	}
+	if f.PlatformDefault != nil {
+		where += ` AND g.platform_default = ?`
+		args = append(args, boolInt(*f.PlatformDefault))
+	}
+	if f.AdminDefault != nil {
+		where += ` AND g.admin_default = ?`
+		args = append(args, boolInt(*f.AdminDefault))
+	}
+	if f.System != nil {
+		where += ` AND g.system = ?`
+		args = append(args, boolInt(*f.System))
+	}
+	if f.Name != "" {
+		if f.NameMatch == "exact" {
+			where += ` AND LOWER(g.name) = ?`
+			args = append(args, strings.ToLower(f.Name))
+		} else {
+			where += ` AND LOWER(g.name) LIKE ?`
+			args = append(args, "%"+strings.ToLower(f.Name)+"%")
+		}
 	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM groups g WHERE `+where, args...).Scan(&count); err != nil {

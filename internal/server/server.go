@@ -223,13 +223,27 @@ func queryEnum(q url.Values, key string, allowed []string, def string) (string, 
 }
 
 func queryBool(q url.Values, key string) (bool, error) {
+	v, err := queryBoolPtr(q, key)
+	if err != nil || v == nil {
+		return false, err
+	}
+	return *v, nil
+}
+
+// queryBoolPtr is queryBool for filters that must distinguish absent from
+// false (Django only applies a filter when its parameter is present).
+func queryBoolPtr(q url.Values, key string) (*bool, error) {
 	switch q.Get(key) {
-	case "", "false":
-		return false, nil
+	case "":
+		return nil, nil
 	case "true":
-		return true, nil
+		v := true
+		return &v, nil
+	case "false":
+		v := false
+		return &v, nil
 	default:
-		return false, fmt.Errorf("invalid %s", key)
+		return nil, fmt.Errorf("invalid %s", key)
 	}
 }
 
@@ -1141,7 +1155,27 @@ func (s *Server) handleGroupsList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	items, total, err := group.List(s.db, user.OrgID, false, limit, offset)
+	filter := group.Filter{Name: q.Get("name"), NameMatch: "partial"}
+	if filter.Name != "" {
+		if filter.NameMatch, err = queryEnum(q, "name_match",
+			[]string{"partial", "exact"}, "partial"); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if filter.PlatformDefault, err = queryBoolPtr(q, "platform_default"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if filter.AdminDefault, err = queryBoolPtr(q, "admin_default"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if filter.System, err = queryBoolPtr(q, "system"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items, total, err := group.List(s.db, user.OrgID, filter, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "unexpected error")
 		return

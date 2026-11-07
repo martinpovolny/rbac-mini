@@ -888,6 +888,82 @@ func TestGroupsList(t *testing.T) {
 	}
 }
 
+// TestGroupsListNameFilter: the create wizard checks availability with
+// ?name=<typed>&name_match=exact on every keystroke. Ignoring the filter made
+// the wizard see an unrelated existing group and report "name already taken".
+func TestGroupsListNameFilter(t *testing.T) {
+	s, header := testServerSeeded(t)
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := s.db.Exec(q, args...); err != nil {
+			t.Fatalf("seed %q: %v", q, err)
+		}
+	}
+	exec(`INSERT INTO groups(uuid, name, tenant_id) VALUES('g-two','test-group-two',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO groups(uuid, name, admin_default, system, tenant_id) VALUES('g-ad','Default admin access',1,1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO groups(uuid, name, platform_default, system, tenant_id) VALUES('g-pd','Default access',1,1,
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"exact hit", "?name=test-group-two&name_match=exact", []string{"test-group-two"}},
+		{"exact case insensitive", "?name=TEST-GROUP-TWO&name_match=exact", []string{"test-group-two"}},
+		{"exact prefix is not taken", "?name=test-group-t&name_match=exact", []string{}},
+		{"partial default", "?name=test-group", []string{"test-group-two"}},
+		{"partial multiple", "?name=GROUP", []string{"groupA", "test-group-two"}},
+		{"unrelated name", "?name=something-else&name_match=exact", []string{}},
+		{"default group stays hidden", "?name=Default%20admin%20access&name_match=exact", []string{}},
+		{"admin default probe", "?limit=1&admin_default=true", []string{"Default admin access"}},
+		{"platform default probe", "?limit=1&platform_default=true", []string{"Default access"}},
+		{"system false", "?system=false", []string{"groupA", "test-group-two"}},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+tc.query, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200 (body: %s)", tc.name, rec.Code, rec.Body.String())
+			continue
+		}
+		var body principalPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: decode: %v", tc.name, err)
+		}
+		var names []string
+		for _, item := range body.Data {
+			names = append(names, item["name"].(string))
+		}
+		if len(names) != len(tc.want) || body.Meta.Count != len(tc.want) {
+			t.Errorf("%s: groups = %v (count %d), want %v", tc.name, names, body.Meta.Count, tc.want)
+			continue
+		}
+		for i := range names {
+			if names[i] != tc.want[i] {
+				t.Errorf("%s: groups = %v, want %v", tc.name, names, tc.want)
+				break
+			}
+		}
+	}
+
+	for _, query := range []string{
+		"?name=x&name_match=bogus", "?platform_default=maybe", "?admin_default=1", "?system=yes",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+query, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", query, rec.Code)
+		}
+	}
+}
+
 // groupUUID resolves a group uuid by name via the list endpoint.
 func groupUUID(t *testing.T, s *Server, header, name string) string {
 	t.Helper()
