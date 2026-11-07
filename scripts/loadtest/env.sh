@@ -83,14 +83,23 @@ probe_app() {
 }
 
 # measure_config <label> <port> <api-prefix>: RUNS measured runs, one JSON file each.
+# LOAD_WRAPPER is a command prefix for the load generator (footprint.sh sets it to
+# /usr/bin/time -l). Its stderr, including the time report, goes to <label>-<n>.time.
+LOAD_WRAPPER=()
+
 measure_config() {
-  local label=$1 port=$2 prefix=$3 i
+  local label=$1 port=$2 prefix=$3 i stderr
   mkdir -p "$RESULTS_DIR"
-  rm -f "$RESULTS_DIR/$label"-*.json
+  rm -f "$RESULTS_DIR/$label"-*.json "$RESULTS_DIR/$label"-*.time
   for ((i = 1; i <= RUNS; i++)); do
     echo "== $label run $i/$RUNS"
-    python3 "$LOADTEST_DIR/loadtest.py" --base-url "http://localhost:$port" --api-prefix "$prefix" \
-      --org "$ORG_ID" --users "$USER_SPEC" --application "$APPLICATION" --limit "$LIMIT" \
-      --concurrency "$CONCURRENCY" --requests "$REQUESTS" --save "$RESULTS_DIR/$label-$i.json"
+    stderr=/dev/stderr
+    if [ "${#LOAD_WRAPPER[@]}" -gt 0 ]; then
+      stderr="$RESULTS_DIR/$label-$i.time"
+    fi
+    "${LOAD_WRAPPER[@]}" python3 "$LOADTEST_DIR/loadtest.py" --base-url "http://localhost:$port" \
+      --api-prefix "$prefix" --org "$ORG_ID" --users "$USER_SPEC" --application "$APPLICATION" \
+      --limit "$LIMIT" --concurrency "$CONCURRENCY" --requests "$REQUESTS" \
+      --save "$RESULTS_DIR/$label-$i.json" 2>"$stderr"
   done
 }

@@ -29,6 +29,7 @@ image_id() {
   echo "cpu:            $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo unknown)"
   echo "logical cpus:   $(sysctl -n hw.ncpu 2>/dev/null || echo unknown)"
   echo "docker server:  $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo unknown)"
+  echo "docker vm:      $(docker info --format 'cpus {{.NCPU}}, memory {{.MemTotal}} bytes' 2>/dev/null || echo unknown)"
   echo
   echo "rbac-go commit:        $(commit "$RBAC_GO_DIR")"
   echo "insights-rbac commit:  $(commit "$INSIGHTS_RBAC_DIR")"
