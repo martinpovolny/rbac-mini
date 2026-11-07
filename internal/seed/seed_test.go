@@ -63,6 +63,18 @@ func TestSeedCostAdministrator(t *testing.T) {
 		t.Errorf("permission = %q, want %q", sourcesPerm, "sources:*:*")
 	}
 
+	// The UI role wizard lists the granular catalog (allowed_only,
+	// exclude_globals), not just the two application-wide grants.
+	var permCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM permissions`).Scan(&permCount); err != nil || permCount < 20 {
+		t.Errorf("permissions = %d, err = %v, want the full catalog", permCount, err)
+	}
+	var modelRead int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM permissions
+		WHERE permission='cost-management:cost_model:read'`).Scan(&modelRead); err != nil || modelRead != 1 {
+		t.Errorf("cost-management:cost_model:read count = %d, err = %v, want 1", modelRead, err)
+	}
+
 	// Both roles carry admin_default, and the public "Default admin access"
 	// group links them (Django seed_group parity).
 	for _, name := range []string{"Cost Administrator", "Sources administrator"} {

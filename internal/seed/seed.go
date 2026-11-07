@@ -21,6 +21,29 @@ var adminRoles = []struct{ name, permission string }{
 // header's is_org_admin (access.Query's admin clause).
 const defaultAdminGroup = "Default admin access"
 
+// permissionCatalog mirrors the operator's rbac_seed/data/*.permissions.json.
+// The RBAC UI role wizard lists these (allowed_only, exclude_globals) to build
+// custom roles, so the granular entries must exist even though the seeded
+// administrator roles only grant the application-wide permission.
+var permissionCatalog = map[string]map[string][]string{
+	"cost-management": {
+		"aws.account":             {"*", "read"},
+		"aws.organizational_unit": {"*", "read"},
+		"azure.subscription_guid": {"*", "read"},
+		"gcp.account":             {"*", "read"},
+		"gcp.project":             {"*", "read"},
+		"openshift.cluster":       {"*", "read"},
+		"openshift.node":          {"*", "read"},
+		"openshift.project":       {"*", "read"},
+		"cost_model":              {"*", "read", "write"},
+		"settings":                {"*", "read", "write"},
+		"*":                       {"*"},
+	},
+	"sources": {
+		"*": {"*"},
+	},
+}
+
 // Seed loads the on-prem role/permission set (mirrors
 // operator/internal/resources/rbac_seed/data/*.json plus
 // `manage.py seeds --skip-notifications`). Idempotent: safe to run on every
@@ -43,6 +66,20 @@ func Seed(db *store.DB) error {
 		return err
 	}
 
+	// Permission catalog first: the role grants below and the UI wizard share
+	// it, and ON CONFLICT keeps re-runs free of duplicates.
+	for app, resources := range permissionCatalog {
+		for resource, verbs := range resources {
+			for _, verb := range verbs {
+				permission := app + ":" + resource + ":" + verb
+				if _, err := tx.Exec(`INSERT INTO permissions(application, resource_type, verb, permission, tenant_id)
+					VALUES(?, ?, ?, ?, ?) ON CONFLICT(permission) DO NOTHING`,
+					app, resource, verb, permission, tenantID); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	for _, role := range adminRoles {
 		if err := seedRole(tx, tenantID, role.name, role.permission); err != nil {
 			return err
