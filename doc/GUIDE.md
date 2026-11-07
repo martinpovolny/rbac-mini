@@ -1,7 +1,7 @@
 # rbac-go request guide: from Keycloak login to koku access decision
 
 How an authenticated request becomes an RBAC access list, end to end.
-For the API contract see `SPEC.md`, for the schema `ERD.md`.
+For the API contract see [SPEC.md](SPEC.md), for the schema [ERD.md](ERD.md).
 
 ## 1. The chain
 
@@ -34,8 +34,8 @@ Step by step:
    Keycloak. The gateway builds the `x-rh-identity` header: base64 JSON with
    `org_id`, `identity.type` (`User`/`ServiceAccount`), `username`,
    `is_org_admin`, and `client_id` for service accounts
-   (`internal/identity` parses and lowercases this).
-2. **koku parses it** (`koku/koku/middleware.py`) into a `User` object —
+   ([`internal/identity`](../internal/identity) parses and lowercases this).
+2. **koku parses it** ([`koku/koku/middleware.py`](https://github.com/project-koku/koku/blob/main/koku/koku/middleware.py)) into a `User` object —
    org, username, admin flag. It does *not* know RBAC yet; it asks us:
    `GET /api/rbac/v1/access/?application=cost-management` with that header.
    Non-200 answers become `[]` (deny); connection errors/5xx become HTTP 424.
@@ -55,12 +55,12 @@ Step by step:
 7. **Back in koku**: it folds that flat ACL list into the per-resource access
    dict (`aws.account: {read: [...]}`, `cost_model: {read, write}`, OCP
    cluster→node→project inheritance, `*` compaction) that its DRF permission
-   classes check (`internal/contract` is our Go port of that mapping).
+   classes check ([`internal/contract`](../internal/contract) is our Go port of that mapping).
    Three koku-side rewrites to know about: `sources:*:*` arrives from RBAC
    verbatim but is rewritten to `sources:sources:*` *before* bucketing —
    otherwise the `*` resource type fans out across every bucket;
    legacy `cost-management:rate:*` means `cost_model`; write implies read.
-   Full rules: `doc/KOKU-NEEDS.md` §2.
+   Full rules: [doc/KOKU-NEEDS.md](KOKU-NEEDS.md) §2.
 
    **Permission notation.** Every grant is an `application:resource:verb`
    triple. `sources:*:*` reads as application=`sources`,
@@ -70,13 +70,13 @@ Step by step:
    bucket instead of the `*` wildcard bucket (which would fan out across
    *every* resource type). Other examples: `cost-management:aws.account:read`
    (read AWS accounts), `cost-management:*:*` (everything in
-   cost-management). See `doc/KOKU-NEEDS.md` §2 and
-   `internal/contract.NormalizeSourcesACL`.
+   cost-management). See [doc/KOKU-NEEDS.md](KOKU-NEEDS.md) §2 and
+   [`internal/contract.NormalizeSourcesACL`](../internal/contract/contract.go).
 
 ## 2. The data path (one query)
 
-`GET /access/` resolves in a single join (`internal/access`; full schema with
-all tables and FKs: `doc/ERD.md`):
+`GET /access/` resolves in a single join ([`internal/access`](../internal/access); full schema with
+all tables and FKs: [doc/ERD.md](ERD.md)):
 
 ```mermaid
 flowchart LR
@@ -95,15 +95,15 @@ flowchart LR
 
 `*` The platform/admin-default groups are injected by the query itself
 (`g.platform_default = 1 … OR g.admin_default = 1` for org admins) —
-no membership rows needed. See `FINDINGS.md` §“live-cluster test” for why:
+no membership rows needed. See [FINDINGS.md](FINDINGS.md) §“live-cluster test” for why:
 without this, on-prem loses the public `Default access` grants.
 
 ## 3. Where the pieces live
 
-* Identity parsing: `internal/identity` (+ `SPEC.md` §4).
-* Join + filters + pagination: `internal/access`; schema: `doc/ERD.md`.
+* Identity parsing: [`internal/identity`](../internal/identity) (+ [SPEC.md](SPEC.md) §4).
+* Join + filters + pagination: [`internal/access`](../internal/access); schema: [doc/ERD.md](ERD.md).
 * koku-side folding port (normalize/process/apply, OCP inheritance):
-  `internal/contract` — proves our output is consumable by koku's mapping.
-* Tenant/group/principal provisioning: `seed.Bootstrap`, `keycloak.Sync`.
-* Full endpoint list: `SPEC.md` §1–§2, OpenAPI subset:
-  `doc/openapi.v1-subset.json`.
+  [`internal/contract`](../internal/contract) — proves our output is consumable by koku's mapping.
+* Tenant/group/principal provisioning: [`seed.Bootstrap`](../internal/seed/seed.go), [`keycloak.Sync`](../internal/keycloak/keycloak.go).
+* Full endpoint list: [SPEC.md](SPEC.md) §1–§2, OpenAPI subset:
+  [doc/openapi.v1-subset.json](openapi.v1-subset.json).
