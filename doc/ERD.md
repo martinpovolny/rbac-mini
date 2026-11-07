@@ -13,21 +13,17 @@ erDiagram
     tenants ||--o{ permissions : "tenant_id"
     tenants ||--o{ access : "tenant_id"
     tenants ||--o{ resource_definitions : "tenant_id"
-
     groups ||--o{ group_principals : "group_id"
     principals ||--o{ group_principals : "principal_id"
-
     groups ||--o{ policies : "group_id"
     policies ||--o{ policy_roles : "policy_id"
     roles ||--o{ policy_roles : "role_id"
-
     roles ||--o{ access : "role_id"
     permissions ||--o{ access : "permission_id"
     access ||--o{ resource_definitions : "access_id"
-
     tenants {
         INTEGER id PK
-        TEXT org_id "UNIQUE, NULL for public"
+        TEXT org_id UK
         TEXT tenant_name
         TEXT account_id
         INTEGER ready
@@ -35,10 +31,10 @@ erDiagram
     principals {
         INTEGER id PK
         TEXT uuid UK
-        TEXT username "lowercased"
-        TEXT type "user|service-account"
-        TEXT service_account_id "nullable"
-        TEXT user_id "nullable"
+        TEXT username
+        TEXT type
+        TEXT service_account_id
+        TEXT user_id
         INTEGER cross_account
         INTEGER tenant_id FK
     }
@@ -53,20 +49,20 @@ erDiagram
         INTEGER tenant_id FK
     }
     group_principals {
-        INTEGER group_id PK_FK
-        INTEGER principal_id PK_FK
+        INTEGER group_id PK, FK
+        INTEGER principal_id PK, FK
     }
     policies {
         INTEGER id PK
         TEXT uuid UK
         TEXT name
-        INTEGER group_id FK_NULL
+        INTEGER group_id FK
         INTEGER system
         INTEGER tenant_id FK
     }
     policy_roles {
-        INTEGER policy_id PK_FK
-        INTEGER role_id PK_FK
+        INTEGER policy_id PK, FK
+        INTEGER role_id PK, FK
     }
     roles {
         INTEGER id PK
@@ -84,7 +80,7 @@ erDiagram
         TEXT application
         TEXT resource_type
         TEXT verb
-        TEXT permission UK "app:res:verb"
+        TEXT permission UK
         INTEGER tenant_id FK
     }
     access {
@@ -96,7 +92,7 @@ erDiagram
     resource_definitions {
         INTEGER id PK
         INTEGER access_id FK
-        TEXT attribute_filter "JSON: key/operation/value"
+        TEXT attribute_filter
         INTEGER tenant_id FK
     }
 ```
