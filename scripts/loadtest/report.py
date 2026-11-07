@@ -2,7 +2,8 @@
 """Summarise one load-test stage: markdown tables and a stdlib-only SVG chart.
 
 Reads results/<stage>/<label>-<n>.json, written by measure_config in env.sh.
-Each --group LABEL=TITLE becomes one row and one chart group. Latencies and rps
+Each --group [STAGE/]LABEL=TITLE becomes one row and one chart group; STAGE/ reads
+results/<STAGE>/ instead of the results directory given. Latencies and rps
 are medians across that label's runs; max is the worst run; errors are summed.
 Writes REPORT.md and report.svg into the results directory unless told otherwise.
 """
@@ -159,8 +160,8 @@ def chart(rows, subtitle):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--results-dir", required=True)
-    ap.add_argument("--group", action="append", metavar="LABEL=TITLE",
-                    help="repeatable; default: the three baseline configurations")
+    ap.add_argument("--group", action="append", metavar="[STAGE/]LABEL=TITLE",
+                    help="repeatable; STAGE/ reads another stage's results; default: the baseline configurations")
     ap.add_argument("--subtitle", default="", help="line under the chart title (run conditions)")
     ap.add_argument("--svg", help="SVG output path (default: <results-dir>/report.svg)")
     ap.add_argument("--md", help="markdown output path (default: <results-dir>/REPORT.md)")
@@ -169,9 +170,13 @@ def main():
     specs = [tuple(g.split("=", 1)) for g in args.group] if args.group else DEFAULT_GROUPS
     rows = []
     for label, title in specs:
-        runs = load_runs(args.results_dir, label)
+        directory, name = args.results_dir, label
+        if "/" in label:
+            stage, name = label.split("/", 1)
+            directory = os.path.join(os.path.dirname(os.path.normpath(args.results_dir)), stage)
+        runs = load_runs(directory, name)
         if not runs:
-            print(f"warning: no runs for {label} in {args.results_dir}", file=sys.stderr)
+            print(f"warning: no runs for {label} in {directory}", file=sys.stderr)
             continue
         rows.append({"label": label, "title": title, "runs": runs, "summary": summarise(runs)})
     if not rows:
