@@ -7,7 +7,7 @@ changes except where marked TODO.
 ## 0. Open decisions
 
 1. **Image registry + tag**: RESOLVED — `quay.io/martin_povolny/rbac-go`.
-   Use the current verified tag (`v0.3.6` at the time of writing; see
+   Use the current verified tag (`v0.3.7` at the time of writing; see
    [LIVE-CLUSTER-TEST.md](LIVE-CLUSTER-TEST.md)); operator's
    `RBACConfig.Image` default becomes repository
    `quay.io/martin_povolny/rbac-go`.

@@ -18,8 +18,8 @@ oc -n cost-byoi get costmanagementserviceconfig  # note the CR name
 ```bash
 cd /Users/martinpovolny/Projects/koku/insights-rbac/rbac-go
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t quay.io/martin_povolny/rbac-go:v0.3.6 --push .
-docker buildx imagetools inspect quay.io/martin_povolny/rbac-go:v0.3.6
+  -t quay.io/martin_povolny/rbac-go:v0.3.7 --push .
+docker buildx imagetools inspect quay.io/martin_povolny/rbac-go:v0.3.7
 # expect: linux/amd64 + linux/arm64 manifests
 ```
 
@@ -206,7 +206,7 @@ Result after the first upload: six OCP CSVs processed into `org1234567`, and
 `openshift.project=54`, `settings=1`. AWS/GCP/Azure rows stay empty because
 the on-prem sources API only registers `openshift` source types.
 
-`rbac-go v0.3.6` additionally returns `created`/`modified` on roles and groups
+`rbac-go v0.3.6` added `modified`; `v0.3.7` adds `created`, so both timestamps are now on roles and groups
 (including group roles and user-detail role rows), so the "Last modified"
 columns render dates instead of "Invalid date"/"—".
 
