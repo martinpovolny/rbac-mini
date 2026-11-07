@@ -28,10 +28,18 @@ Go replacement for `insights-rbac`, scoped to what `../koku` and
   ([`rbac/rbac/middleware.py`](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/rbac/middleware.py), [`api/models.py:110-152`](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/api/models.py#L110-L152)).
 * On-prem UI (v1 User Access, [koku-ui/apps/rbac-ui-onprem](https://github.com/project-koku/koku-ui/tree/main/apps/rbac-ui-onprem) federated wrapper;
   see doc/FINDINGS.md §7). The operator runs with
-  `BYPASS_BOP_VERIFICATION=True`, so principals come straight from the DB
-  (fake `foo`/`bar`/`baz` attrs, as in [management/principal/proxy.py:173](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/principal/proxy.py#L173)):
-  * `GET /api/rbac/v1/principals/?limit=&offset=&usernames=` — Users page
-    (paginated, `meta{count,limit,offset}`).
+  `BYPASS_BOP_VERIFICATION=True`, and rbac-go replaces the upstream
+  `foo`/`bar`/`baz` stubs ([management/principal/proxy.py:173](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/principal/proxy.py#L173))
+  with the profile the Keycloak sync persisted (`email`, `first_name`,
+  `last_name`, `is_active`, `is_org_admin`, `user_id`, `type`; email falls
+  back to `<username>@local`). The same contract is returned for group
+  members.
+  * `GET /api/rbac/v1/principals/?limit=&offset=&usernames=&email=&match_criteria=&status=&admin_only=&username_only=&sort_order=&type=`
+    — Users page (paginated, `meta{count,limit,offset}`). Defaults mirror
+    Django: `status=enabled`, `match_criteria=exact`, `sort_order=asc`,
+    `type=user`; `admin_only` applies only to unfiltered requests. An exact
+    `usernames=` lookup of an unknown user returns a BYPASS-shaped stub, so
+    the user-detail page can tell "filtered out" from "does not exist".
   * `GET /api/rbac/v1/roles/` + `POST|GET|PUT|PATCH|DELETE /api/rbac/v1/roles/{uuid}/`
     (+ `GET .../access/`) — Roles pages + creation wizard. Create validates
     `application ∈ ROLE_CREATE_ALLOW_LIST`
@@ -142,7 +150,7 @@ Portable type rules (no PG-only DDL):
 | Table | Columns (portable types) |
 |---|---|
 | `tenants` | `id INTEGER PK, org_id TEXT UNIQUE, tenant_name TEXT, account_id TEXT, ready INTEGER` |
-| `principals` | `id INTEGER PK, uuid TEXT UNIQUE, username TEXT (lowercase), type TEXT, service_account_id TEXT, user_id TEXT, cross_account INTEGER, tenant_id INTEGER FK` + unique `(username, tenant_id)` |
+| `principals` | `id INTEGER PK, uuid TEXT UNIQUE, username TEXT (lowercase), type TEXT, service_account_id TEXT, user_id TEXT, email TEXT, first_name TEXT, last_name TEXT, is_org_admin INTEGER, is_active INTEGER, cross_account INTEGER, tenant_id INTEGER FK` + unique `(username, tenant_id)` |
 | `groups` | `id INTEGER PK, uuid TEXT UNIQUE, name TEXT, description TEXT, platform_default INTEGER, system INTEGER, admin_default INTEGER, tenant_id INTEGER FK` + unique `(name, tenant_id)` |
 | `group_principals` | `group_id INTEGER FK, principal_id INTEGER FK`, PK `(group_id, principal_id)` |
 | `policies` | `id INTEGER PK, uuid TEXT UNIQUE, name TEXT, group_id INTEGER FK NULL, system INTEGER, tenant_id INTEGER FK` + unique `(name, tenant_id)` |
@@ -190,7 +198,12 @@ empty access (matches bootstrap behavior).
 * Migration+seed as `initContainer` or `Job` equivalent to
   [migration.go:147-205](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/migration.go#L147-L205) (idempotent SQL, no `manage.py`).
 * Keycloak sync as `CronJob` equivalent: list realm users via client-credentials,
-  upsert `principals`, add to org group, `SYNC_PRUNE_ORPHANS` deletes stale rows.
+  upsert `principals` with their profile (`email`, names, `enabled`) and the
+  `org-admin` realm role (`SYNC_ORG_ADMIN_SUBGROUP`, default `org-admin`), add
+  to org group, `SYNC_PRUNE_ORPHANS` deletes stale rows. Disabled users are
+  kept: they still exist, keep group bindings, and can be re-enabled; the API
+  hides them with the default `status=enabled` filter. This replaces the
+  separate `principal-profile` sidecar — Keycloak is read only by the sync.
 * Probes `GET /api/rbac/v1/status/`; no Celery, no Kafka, no Clowder dependency
   (`CLOWDER_ENABLED=false, KAFKA_ENABLED=false`).
 

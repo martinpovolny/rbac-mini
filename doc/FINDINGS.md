@@ -106,7 +106,9 @@ ReviewStep, browser 401→/logout, useAppLink).
 Confirmed on-prem UI calls (traffic traces + source refs):
 
 - `GET /api/rbac/v1/access/` — permission gating (`useAccessPermissions`).
-- `GET /api/rbac/v1/principals/?limit=&offset=` — Users page (401-loop trace).
+- `GET /api/rbac/v1/principals/?limit=&offset=&usernames=…&status=…&admin_only=…`
+  — Users page (401-loop trace) and the user-detail page, which looks a single
+  principal up by `usernames=`.
 - `GET /api/rbac/v1/groups/…` — Groups pages (list, members, group roles;
   34 refs in v1+shared).
 - `GET|POST|PUT|PATCH|DELETE /api/rbac/v1/roles/…` — Roles pages + creation
