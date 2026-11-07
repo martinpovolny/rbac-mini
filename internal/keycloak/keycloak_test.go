@@ -227,9 +227,12 @@ func TestSyncPersistsProfilesAndKeepsDisabled(t *testing.T) {
 		t.Error("carol was not pruned")
 	}
 
-	// A re-enabled user becomes active again, and losing the realm role drops
+	// Keycloak stays the source of truth: a re-enabled user becomes active
+	// again, changed profiles are refreshed, and losing the realm role drops
 	// org-admin.
 	users[1].Enabled = true
+	users[1].Email = "bob+new@example.com"
+	users[0].Email = ""
 	noAdmins := profileStub(t, users, nil)
 	defer noAdmins.Close()
 	cfg.BaseURL = noAdmins.URL
@@ -240,9 +243,15 @@ func TestSyncPersistsProfilesAndKeepsDisabled(t *testing.T) {
 	if !bob.IsActive {
 		t.Error("bob is_active = false after re-enable, want true")
 	}
+	if bob.Email != "bob+new@example.com" {
+		t.Errorf("bob email = %q, want the refreshed value", bob.Email)
+	}
 	alice, _ = readPrincipal(t, db, "alice")
 	if alice.IsOrgAdmin {
 		t.Error("alice is_org_admin = true after role removal, want false")
+	}
+	if alice.Email != "" {
+		t.Errorf("alice email = %q, want cleared when Keycloak has none", alice.Email)
 	}
 }
 
@@ -299,9 +308,10 @@ func TestSyncRoleMissingMeansNoAdmins(t *testing.T) {
 	}
 }
 
-// stubKeycloakGroups emulates group discovery: one org- group with attributes
-// plus its members endpoint (mirrors sync_keycloak_principals.py).
-func stubKeycloakGroups(t *testing.T, members []string) *httptest.Server {
+// stubKeycloakGroups emulates group discovery: one org- group with attributes,
+// its members endpoint and the org-admin realm role (mirrors
+// sync_keycloak_principals.py plus the sidecar's role lookup).
+func stubKeycloakGroups(t *testing.T, members []kcStubUser, admins []string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/realms/onprem/protocol/openid-connect/token", func(w http.ResponseWriter, r *http.Request) {
@@ -320,7 +330,17 @@ func stubKeycloakGroups(t *testing.T, members []string) *httptest.Server {
 	mux.HandleFunc("/admin/realms/onprem/groups/g1/members", func(w http.ResponseWriter, r *http.Request) {
 		out := make([]map[string]any, 0, len(members))
 		for _, u := range members {
-			out = append(out, map[string]any{"username": u, "enabled": true})
+			out = append(out, map[string]any{
+				"id": u.ID, "username": u.Username, "email": u.Email,
+				"firstName": u.FirstName, "lastName": u.LastName, "enabled": u.Enabled,
+			})
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	mux.HandleFunc("/admin/realms/onprem/roles/org-admin/users", func(w http.ResponseWriter, r *http.Request) {
+		out := make([]map[string]any, 0, len(admins))
+		for _, name := range admins {
+			out = append(out, map[string]any{"username": name})
 		}
 		_ = json.NewEncoder(w).Encode(out)
 	})
@@ -329,13 +349,20 @@ func stubKeycloakGroups(t *testing.T, members []string) *httptest.Server {
 
 // TestSyncDiscoversOrgs: without --org, sync discovers org- groups, creates
 // the tenant, and syncs principals with no group assignment (platform/admin
-// defaults grant access, as in the Django script).
+// defaults grant access, as in the Django script). The discovery path must
+// persist the same profile as the single-org path.
 func TestSyncDiscoversOrgs(t *testing.T) {
 	db := testdb.Open(t)
 	if err := seed.Seed(db); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
-	srv := stubKeycloakGroups(t, []string{"alice", "bob"})
+	members := []kcStubUser{
+		{ID: "kc-alice", Username: "alice", Email: "alice@example.com",
+			FirstName: "Alice", LastName: "Admin", Enabled: true},
+		{ID: "kc-bob", Username: "bob", Enabled: false},
+		{ID: "kc-sa", Username: "service-account-sync", Enabled: true},
+	}
+	srv := stubKeycloakGroups(t, members, []string{"alice"})
 	defer srv.Close()
 
 	err := Sync(db, Config{
@@ -351,12 +378,27 @@ func TestSyncDiscoversOrgs(t *testing.T) {
 	if err := db.QueryRow(`SELECT tenant_name, ready FROM tenants WHERE org_id='100001'`).Scan(&tenant, &ready); err != nil {
 		t.Fatalf("tenant missing: %v", err)
 	}
-	for _, u := range []string{"alice", "bob"} {
-		var n int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM principals pr
-			JOIN tenants t ON t.id = pr.tenant_id
-			WHERE t.org_id='100001' AND pr.username=?`, u).Scan(&n); err != nil || n != 1 {
-			t.Errorf("principal %q count = %d, err = %v, want 1", u, n, err)
-		}
+
+	alice, ok := readPrincipal(t, db, "alice")
+	if !ok {
+		t.Fatal("alice missing after discovery sync")
+	}
+	if alice.Email != "alice@example.com" || alice.FirstName != "Alice" || alice.LastName != "Admin" {
+		t.Errorf("alice profile = %+v", alice)
+	}
+	if alice.UserID != "kc-alice" || !alice.IsOrgAdmin || !alice.IsActive {
+		t.Errorf("alice identity/flags = %+v, want kc-alice, org admin and active", alice)
+	}
+	bob, ok := readPrincipal(t, db, "bob")
+	if !ok || bob.IsActive {
+		t.Errorf("bob = %+v, present=%v, want present and inactive", bob, ok)
+	}
+	if _, ok := readPrincipal(t, db, "service-account-sync"); ok {
+		t.Error("service-account member was synced as a principal")
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM principals pr
+		JOIN tenants t ON t.id = pr.tenant_id WHERE t.org_id='100001'`).Scan(&count); err != nil || count != 2 {
+		t.Errorf("principal count = %d, err = %v, want alice and bob", count, err)
 	}
 }

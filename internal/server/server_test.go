@@ -450,11 +450,16 @@ func TestPrincipalsListFilters(t *testing.T) {
 		{"admin only", "?admin_only=true", []string{"orgadmin"}},
 		{"username exact", "?usernames=TEST_USER", []string{"test_user"}},
 		{"username partial", "?usernames=ORG&match_criteria=partial", []string{"orgadmin"}},
+		{"partial uses first username only", "?usernames=org,test&match_criteria=partial", []string{"orgadmin"}},
+		{"usernames with spaces", "?usernames=test_user,%20orgadmin", []string{"orgadmin", "test_user"}},
 		{"sort desc", "?status=all&sort_order=desc", []string{"test_user", "orgadmin", "olduser"}},
 		{"email exact", "?email=orgadmin@local", []string{"orgadmin"}},
 		{"email partial", "?email=OLD&match_criteria=partial&status=all", []string{"olduser"}},
+		{"username and email", "?usernames=test_user,orgadmin&email=orgadmin@local", []string{"orgadmin"}},
+		{"admin_only ignored with username filter", "?usernames=test_user&admin_only=true", []string{"test_user"}},
 		{"unknown detail lookup", "?usernames=ghost", []string{"ghost"}},
 		{"unknown detail respects status", "?usernames=ghost&status=disabled", []string{}},
+		{"username_only keeps status filter", "?username_only=true", []string{"orgadmin", "test_user"}},
 	}
 	for _, tc := range cases {
 		code, page := getPrincipals(t, s, header, tc.query)
@@ -486,6 +491,16 @@ func TestPrincipalsListFilters(t *testing.T) {
 	if stub["email"] != "ghost@local" || stub["is_active"] != true ||
 		stub["is_org_admin"] != false || stub["user_id"] != "ghost" {
 		t.Errorf("unknown stub = %v", stub)
+	}
+
+	// Unknown stubs take part in sorting and pagination with the real rows.
+	code, page = getPrincipals(t, s, header,
+		"?usernames=test_user,ghost,orgadmin&limit=2&offset=1")
+	if code != http.StatusOK || page.Meta.Count != 3 {
+		t.Fatalf("stub pagination = %d / count %d, want 200 / 3", code, page.Meta.Count)
+	}
+	if got := usernamesOf(page); len(got) != 2 || got[0] != "orgadmin" || got[1] != "test_user" {
+		t.Errorf("stub pagination page = %v, want [orgadmin test_user]", got)
 	}
 
 	_, page = getPrincipals(t, s, header, "?username_only=true&status=all")
@@ -989,13 +1004,15 @@ func TestGroupPrincipals(t *testing.T) {
 		}
 	}
 
-	req = httptest.NewRequest(http.MethodGet,
-		"/api/rbac/v1/groups/"+uuid+"/principals/?order_by=email", nil)
-	req.Header.Set("X-Rh-Identity", header)
-	rec = httptest.NewRecorder()
-	s.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("invalid order_by: status = %d, want 400", rec.Code)
+	for _, query := range []string{"?order_by=email", "?principal_type=bogus", "?username_only=maybe"} {
+		req = httptest.NewRequest(http.MethodGet,
+			"/api/rbac/v1/groups/"+uuid+"/principals/"+query, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec = httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", query, rec.Code)
+		}
 	}
 }
 
