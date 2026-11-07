@@ -215,36 +215,22 @@ func Roles(db *store.DB, orgID, groupUUID string, limit, offset int) (items []ro
 }
 
 // Members returns the principals of a group (members tab).
-func Members(db *store.DB, orgID, groupUUID string, limit, offset int) (items []principal.Principal, total int, err error) {
-	var groupID int64
-	err = db.QueryRow(`SELECT g.id FROM groups g
+// Members lists the principals in a tenant group. It shares the principal
+// filters, so members come back with the same stored profile contract and the
+// same default status=enabled as GET /principals/.
+func Members(db *store.DB, orgID, groupUUID string, f principal.Filter) (items []principal.Principal, total int, err error) {
+	var found int
+	err = db.QueryRow(`SELECT COUNT(*) FROM groups g
 		JOIN tenants t ON t.id = g.tenant_id
-		WHERE g.uuid = ? AND t.org_id = ?`, groupUUID, orgID).Scan(&groupID)
+		WHERE g.uuid = ? AND t.org_id = ?`, groupUUID, orgID).Scan(&found)
 	if err != nil {
 		return nil, 0, err
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM group_principals WHERE group_id = ?`,
-		groupID).Scan(&total); err != nil {
-		return nil, 0, err
+	if found == 0 {
+		return nil, 0, sql.ErrNoRows
 	}
-	rows, err := db.Query(`SELECT pr.username FROM principals pr
-		JOIN group_principals gp ON gp.principal_id = pr.id
-		WHERE gp.group_id = ? ORDER BY pr.username LIMIT ? OFFSET ?`, groupID, limit, offset)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = rows.Close() }()
-	items = []principal.Principal{}
-	for rows.Next() {
-		var username string
-		if err := rows.Scan(&username); err != nil {
-			return nil, 0, err
-		}
-		items = append(items, principal.Principal{
-			Username: username, Email: "baz", FirstName: "foo", LastName: "bar",
-		})
-	}
-	return items, total, rows.Err()
+	f.GroupUUID = groupUUID
+	return principal.List(db, orgID, f)
 }
 
 // reservedNames mirrors validate_group_name.

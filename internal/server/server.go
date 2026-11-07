@@ -931,10 +931,41 @@ func (s *Server) handleGroupPrincipals(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	items, total, err := group.Members(s.db, user.OrgID, r.PathValue("uuid"), limit, offset)
+	filter := principal.Filter{Limit: limit, Offset: offset, Status: "enabled"}
+	switch order := q.Get("order_by"); order {
+	case "":
+	case "username":
+	case "-username":
+		filter.SortDesc = true
+	default:
+		writeError(w, http.StatusBadRequest, "invalid order_by")
+		return
+	}
+	if filter.UsernameOnly, err = queryBool(q, "username_only"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if filter.AdminOnly, err = queryBool(q, "admin_only"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if filter.Type, err = queryEnum(q, "principal_type",
+		[]string{"user", "service-account", "all"}, "user"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items, total, err := group.Members(s.db, user.OrgID, r.PathValue("uuid"), filter)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not found")
 		return
+	}
+	data := any(items)
+	if filter.UsernameOnly {
+		only := make([]map[string]string, 0, len(items))
+		for _, item := range items {
+			only = append(only, map[string]string{"username": item.Username})
+		}
+		data = only
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"meta": map[string]any{"count": total, "limit": limit, "offset": offset},
@@ -943,7 +974,7 @@ func (s *Server) handleGroupPrincipals(w http.ResponseWriter, r *http.Request) {
 			"next":  linkURLOrNil(r, offset+limit, limit, offset+limit < total),
 			"last":  linkURL(r, lastOffset(total, limit), limit),
 		},
-		"data": items,
+		"data": data,
 	})
 }
 

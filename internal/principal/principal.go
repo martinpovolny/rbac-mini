@@ -35,6 +35,8 @@ type Filter struct {
 	SortDesc      bool
 	Limit         int
 	Offset        int
+	// GroupUUID restricts the result to members of one tenant group.
+	GroupUUID string
 }
 
 // emailExpr is the effective email: the stored Keycloak address, or the
@@ -104,6 +106,12 @@ func List(db *store.DB, orgID string, f Filter) ([]Principal, int, error) {
 	}
 	if f.AdminOnly {
 		where = append(where, `pr.is_org_admin = 1`)
+	}
+	if f.GroupUUID != "" {
+		where = append(where, `EXISTS (SELECT 1 FROM group_principals gp
+			JOIN groups g ON g.id = gp.group_id
+			WHERE gp.principal_id = pr.id AND g.uuid = ? AND g.tenant_id = t.id)`)
+		args = append(args, f.GroupUUID)
 	}
 
 	order := " ASC"

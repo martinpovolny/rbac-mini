@@ -901,32 +901,101 @@ func groupUUID(t *testing.T, s *Server, header, name string) string {
 	return ""
 }
 
-// TestGroupPrincipals: members tab of a group.
+// TestGroupPrincipals: members tab of a group. Members use the same stored
+// profile contract as GET /principals/, default to status=enabled, and honour
+// order_by/username_only/admin_only.
 func TestGroupPrincipals(t *testing.T) {
 	s, header := testServerSeeded(t)
 	uuid := groupUUID(t, s, header, "groupA")
+	exec := func(q string) {
+		t.Helper()
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	exec(`UPDATE principals SET email='test_user@example.com', first_name='Test',
+		last_name='User', user_id='kc-test' WHERE username='test_user'`)
+	exec(`INSERT INTO principals(uuid, username, type, is_org_admin, is_active, tenant_id)
+		VALUES('pu-zoe','zoe','user',1,1,(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO principals(uuid, username, type, is_active, tenant_id)
+		VALUES('pu-old','olduser','user',0,(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO group_principals(group_id, principal_id)
+		SELECT (SELECT id FROM groups WHERE uuid='g-a'), id FROM principals
+		WHERE username IN ('zoe','olduser')`)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/groups/"+uuid+"/principals/?limit=20", nil)
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"enabled by default", "?limit=20", []string{"test_user", "zoe"}},
+		{"order desc", "?order_by=-username", []string{"zoe", "test_user"}},
+		{"admin only", "?admin_only=true", []string{"zoe"}},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/rbac/v1/groups/"+uuid+"/principals/"+tc.query, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200 (body: %s)", tc.name, rec.Code, rec.Body.String())
+		}
+		var body principalPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: decode: %v", tc.name, err)
+		}
+		got := usernamesOf(body)
+		if len(got) != len(tc.want) || body.Meta.Count != len(tc.want) {
+			t.Errorf("%s: members = %v (count %d), want %v", tc.name, got, body.Meta.Count, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: members = %v, want %v", tc.name, got, tc.want)
+				break
+			}
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/rbac/v1/groups/"+uuid+"/principals/?limit=20", nil)
 	req.Header.Set("X-Rh-Identity", header)
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
-	}
-	var body struct {
-		Meta struct {
-			Count int `json:"count"`
-		} `json:"meta"`
-		Data []struct {
-			Username string `json:"username"`
-		} `json:"data"`
-	}
+	var body principalPage
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Meta.Count != 1 || len(body.Data) != 1 || body.Data[0].Username != "test_user" {
-		t.Errorf("members = %+v, want [test_user]", body.Data)
+	member := body.Data[0]
+	if member["email"] != "test_user@example.com" || member["first_name"] != "Test" ||
+		member["is_active"] != true || member["is_org_admin"] != false ||
+		member["user_id"] != "kc-test" || member["type"] != "user" {
+		t.Errorf("member = %v", member)
+	}
+
+	req = httptest.NewRequest(http.MethodGet,
+		"/api/rbac/v1/groups/"+uuid+"/principals/?username_only=true", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	body = principalPage{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, item := range body.Data {
+		if len(item) != 1 || item["username"] == nil {
+			t.Errorf("username_only member = %v, want only username", item)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet,
+		"/api/rbac/v1/groups/"+uuid+"/principals/?order_by=email", nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec = httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("invalid order_by: status = %d, want 400", rec.Code)
 	}
 }
 
