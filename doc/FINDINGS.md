@@ -5,9 +5,10 @@ relative to the repos as of 2026-11-06 unless noted.
 
 ## 1. Celery is not needed on the v1/on-prem path
 
-`insights-rbac/rbac/{api,management}/tasks.py` hold ~30 tasks; all 60+
-`.delay()` call sites are in `internal/views.py` (admin APIs) and the beat
-schedule (`rbac/celery.py`). Categories:
+[insights-rbac/rbac/api/tasks.py](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/api/tasks.py) and
+[insights-rbac/rbac/management/tasks.py](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/tasks.py) hold ~30 tasks; all 60+
+`.delay()` call sites are in [internal/views.py](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/internal/views.py) (admin APIs) and the beat
+schedule ([rbac/celery.py](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/rbac/celery.py)). Categories:
 
 - **v2/Kessel/workspace replication + parity** (`replicate_*_workspaces`,
   `recompute_tenant_role_bindings`, `run_kessel_parity_checks_*`, binding
@@ -29,9 +30,9 @@ broker. The on-prem beat entry `car-wash-daily` scans an always-empty table.
 
 ## 2. Cross-account expiry (SaaS-only, out of scope)
 
-- Model: `api/cross_access/model.py` (`start_date`, `end_date`; validated:
+- Model: [api/cross_access/model.py](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/api/cross_access/model.py) (`start_date`, `end_date`; validated:
   start within 60 days, duration ≤ 1 year).
-- `check_cross_request_expiry()` (`api/cross_access/util.py:34`): flips
+- `check_cross_request_expiry()` ([api/cross_access/util.py:34](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/api/cross_access/util.py#L34)): flips
   `pending`/`approved` → `expired` past `end_date`, revokes roles incl. a
   Kessel dual-write for v2 tuples.
 - Triggers: celery beat (`car-wash-daily`) + internal `api/cars/{expire,clean}`.
@@ -41,7 +42,7 @@ broker. The on-prem beat entry `car-wash-daily` scans an always-empty table.
 
 ## 3. Image entrypoints do not decide compatibility
 
-- The old image **does** have an entrypoint (`Dockerfile:148`,
+- The old image **does** have an entrypoint ([Dockerfile:148](https://github.com/RedHatInsights/insights-rbac/blob/master/Dockerfile#L148),
   `ENTRYPOINT ["./scripts/entrypoint.sh"]` → execs gunicorn; migrate/seed
   live in the operator migration Job).
 - But K8s `command:` overrides image `ENTRYPOINT`, and the operator sets
@@ -49,14 +50,14 @@ broker. The on-prem beat entry `car-wash-daily` scans an always-empty table.
   `/bin/bash -c` + `manage.py …`). So compatibility is decided by the
   operator's command/args/env, not by image entrypoints — a pure image-name
   swap cannot work; the operator must branch rendering (see
-  `OPERATOR-SWAP.md`).
+  [OPERATOR-SWAP.md](OPERATOR-SWAP.md)).
 
 ## 4. Operator contract sources (not the Helm chart)
 
 - `cost-onprem-chart/` is obsolete for this purpose. The contract is the
   operator's Go renderers: `rbacEnv()` in
-  `koku-service-operator/internal/resources/rbac.go`, pinned by
-  `internal/resources/rbac_test.go` (`TestRBACEnv*`, `TestRBACAPIService`,
+  [koku-service-operator/internal/resources/rbac.go](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac.go), pinned by
+  [internal/resources/rbac_test.go](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac_test.go) (`TestRBACEnv*`, `TestRBACAPIService`,
   `TestRBACWorkerDeployment` — 7/7 passing).
 - Env the Go binary must accept: `DATABASE_*` (honored), `REDIS_*`,
   `DJANGO_SECRET_KEY`, `ACCESS_CACHE_ENABLED` (accepted no-ops).
@@ -69,7 +70,7 @@ broker. The on-prem beat entry `car-wash-daily` scans an always-empty table.
 
 ## 5. Keycloak sync semantics (what `sync` must replicate)
 
-`operator/internal/resources/scripts/sync_keycloak_principals.py`:
+[operator/internal/resources/scripts/sync_keycloak_principals.py](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/scripts/sync_keycloak_principals.py):
 
 - `discover_and_sync`: lists Keycloak groups with prefix `org-` (default;
   `SYNC_ORG_GROUP_PREFIX`), reads `attributes.org_id` / `account_number`,
@@ -84,11 +85,11 @@ broker. The on-prem beat entry `car-wash-daily` scans an always-empty table.
 
 ## 6. Seed data that matters on-prem
 
-`operator/internal/resources/rbac_seed/data/`:
+[operator/internal/resources/rbac_seed/data/](https://github.com/project-koku/koku-service-operator/tree/main/internal/resources/rbac_seed/data):
 
-- `cost-management.roles.json`: Cost Administrator (`cost-management:*:*`,
+- [cost-management.roles.json](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac_seed/data/cost-management.roles.json): Cost Administrator (`cost-management:*:*`,
   admin_default), Price List Admin/Viewer, OCP cluster viewer, etc.
-- `sources.roles.json`: Sources administrator (`sources:*:*`, admin_default).
+- [sources.roles.json](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac_seed/data/sources.roles.json): Sources administrator (`sources:*:*`, admin_default).
 - rbac-go seeds the two admin_default roles; price-list roles are an explicit
   open decision (needed only if on-prem UI delegation uses them).
 
@@ -98,7 +99,7 @@ The on-prem RBAC UI is a federated wrapper (`@koku-ui/rbac-ui-onprem`,
 "no upstream repo edits — vendored upstream + on-prem shims") mounting the
 full upstream `Iam` component; with no Kessel on-prem it serves the **v1
 User Access** pages (`/iam/user-access/...`). Evidence:
-`koku-ui/COST-8190-rbac-ui.md` (on-prem CRC failure analysis), shims in
+`koku-ui/COST-8190-rbac-ui.md` (an untracked local analysis note for the on-prem CRC failure), shims in
 `apps/rbac-ui-onprem/src/shims/insights-rbac/` (role schema, CostResources,
 ReviewStep, browser 401→/logout, useAppLink).
 

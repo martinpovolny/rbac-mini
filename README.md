@@ -13,7 +13,7 @@ deliberately left out.
 
 ## What it implements
 
-All under `/api/rbac/v1/` ([interactive ReDoc](https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/martinpovolny/rbac-mini/master/doc/openapi.v1-subset.json), live from `doc/openapi.v1-subset.json` on main):
+All under `/api/rbac/v1/` ([interactive ReDoc](https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/martinpovolny/rbac-mini/master/doc/openapi.v1-subset.json), live from [doc/openapi.v1-subset.json](doc/openapi.v1-subset.json) on main):
 
 | Endpoint | Used by |
 |---|---|
@@ -88,10 +88,10 @@ internal/testdb/  per-test isolated DBs (SQLite :memory: or fresh PG database)
 ## Deploying
 
 Via `koku-service-operator` with `spec.rbac.backend: go`
-(see `doc/OPERATOR-SWAP.md`): one field switches the rendered Deployment,
+(see [doc/OPERATOR-SWAP.md](doc/OPERATOR-SWAP.md)): one field switches the rendered Deployment,
 migration Job, and Keycloak-sync CronJob; worker and seed ConfigMaps are
 dropped. Live-cluster verification (CRC, incl. koku end-to-end and rollback)
-is recorded in `doc/LIVE-CLUSTER-TEST.md`.
+is recorded in [doc/LIVE-CLUSTER-TEST.md](doc/LIVE-CLUSTER-TEST.md).
 
 ## License
 

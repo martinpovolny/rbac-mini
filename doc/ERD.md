@@ -1,6 +1,6 @@
 # rbac-go Data Model (ERD)
 
-Portable SQLite + Postgres schema (`internal/store/store.go`). Ten tables;
+Portable SQLite + Postgres schema ([internal/store/store.go](../internal/store/store.go)). Ten tables;
 UUIDs and timestamps are `TEXT`, booleans are `INTEGER 0/1`, `attribute_filter`
 is a JSON `TEXT` blob. Every business table carries `tenant_id`.
 
@@ -99,7 +99,7 @@ erDiagram
 
 ## How the hot path joins it
 
-`GET /api/rbac/v1/access/` (`internal/access/access.go`) walks one query:
+`GET /api/rbac/v1/access/` ([internal/access/access.go](../internal/access/access.go)) walks one query:
 
 ```
 tenants → principals (org_id + lower(username))

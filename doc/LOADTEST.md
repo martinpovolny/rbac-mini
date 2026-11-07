@@ -163,7 +163,7 @@ path would need most of the box and several GiB.
 * Docker (Docker Desktop was used; `host.docker.internal` must resolve from containers).
 * Python 3 (stdlib only; no packages to install).
 * `curl`, `git`.
-* Go 1.27 toolchain, for `native.sh` and the tests.
+* Go 1.27 toolchain, for [native.sh](../scripts/loadtest/native.sh) and the tests.
 * `psql` on the host, for the native Postgres row only.
 * Network access: the scripts pull `postgres:18.1` and `valkey/valkey:8`, build the rbac-go
   image (`golang:1.27` base), and build the insights-rbac image (`registry.access.redhat.com`
@@ -183,12 +183,12 @@ scripts/loadtest/baseline.sh
 
 This runs, in order:
 
-1. `up-baseline.sh`: starts the Postgres and Valkey containers and sets `max_connections=300`.
-2. `up-django.sh off`, then the measurement for `django-nocache` (`RUNS` runs).
-3. `up-django.sh on`, then the measurement for `django-warm` (`RUNS` runs).
-4. `up-go.sh`, then the measurement for `go` (`RUNS` runs).
-5. `capture-env.sh`: writes `ENV.txt`.
-6. `report.py`: writes `REPORT.md` and `report.svg`.
+1. [up-baseline.sh](../scripts/loadtest/up-baseline.sh): starts the Postgres and Valkey containers and sets `max_connections=300`.
+2. [up-django.sh](../scripts/loadtest/up-django.sh) `off`, then the measurement for `django-nocache` (`RUNS` runs).
+3. [up-django.sh](../scripts/loadtest/up-django.sh) `on`, then the measurement for `django-warm` (`RUNS` runs).
+4. [up-go.sh](../scripts/loadtest/up-go.sh), then the measurement for `go` (`RUNS` runs).
+5. [capture-env.sh](../scripts/loadtest/capture-env.sh): writes `ENV.txt`.
+6. [report.py](../scripts/loadtest/report.py): writes `REPORT.md` and `report.svg`.
 
 Add `REBUILD=1` to rebuild the rbac-go and Django images from the checkouts first.
 
@@ -212,7 +212,7 @@ in `ENV.txt`, so note the commit you measured before committing the results.
 STAGE=footprint scripts/loadtest/footprint.sh
 ```
 
-Same order as `baseline.sh`, plus a `docker stats` sampler and `/usr/bin/time -l` around
+Same order as [baseline.sh](../scripts/loadtest/baseline.sh), plus a `docker stats` sampler and `/usr/bin/time -l` around
 each load run. Request counts per run are raised (12000, 30000, 100000) so that each run
 lasts long enough to sample; see [Footprint](#footprint).
 
@@ -249,7 +249,7 @@ starts it as a host process on a local port, measures it, and stops it. The Post
 | [up-baseline.sh](../scripts/loadtest/up-baseline.sh) | Postgres and Valkey containers; sets `max_connections` (stops app containers first, because `ALTER SYSTEM` needs a free connection) |
 | [up-django.sh](../scripts/loadtest/up-django.sh) | Django image, migrate, [django_fixture.py](../scripts/loadtest/django_fixture.py), container with `ACCESS_CACHE_ENABLED` set by `on` or `off` |
 | [up-go.sh](../scripts/loadtest/up-go.sh) | rbac-go image; drops and recreates the `rbacgo` database; migrate, seed, bootstrap; container |
-| [measure.sh](../scripts/loadtest/measure.sh) | Thin wrapper around `measure_config` in `env.sh` |
+| [measure.sh](../scripts/loadtest/measure.sh) | Thin wrapper around `measure_config` in [env.sh](../scripts/loadtest/env.sh) |
 | [loadtest.py](../scripts/loadtest/loadtest.py) | The load generator (stdlib only) |
 | [capture-env.sh](../scripts/loadtest/capture-env.sh) | Writes `ENV.txt`: commits and uncommitted changes, image IDs, server versions, host |
 | [report.py](../scripts/loadtest/report.py) | Writes `REPORT.md` and `report.svg`; `--group STAGE/LABEL=TITLE` reads another stage |
@@ -391,7 +391,7 @@ of the container configurations vary.
   has been taken.
 * **Remove `host.docker.internal` from the path**: put Postgres, Valkey and both apps on one
   user-defined bridge network, to measure the container overhead without the Docker VM hop.
-* **Record error kinds** in `loadtest.py` (status code or exception class), so a stall like
+* **Record error kinds** in [loadtest.py](../scripts/loadtest/loadtest.py) (status code or exception class), so a stall like
   Finding 3 can be attributed without inference.
 * **Load generator headroom**: at 5382 req/s the client used 0.61 cores in one Python process.
   Check whether it caps the highest rps figures by running the same profile from two clients, or

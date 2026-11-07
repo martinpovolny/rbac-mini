@@ -114,6 +114,6 @@ Verified live 2026-11-06 (both directions). Caveats found while testing:
 
 - Same `costonprem_rbac` database throughout; Go tables coexist with Django
   tables; nothing is dropped on either flip.
-- `scripts/flush-rbac-cache.sh` only affects koku-side cache now.
+- [scripts/flush-rbac-cache.sh](https://github.com/project-koku/koku-service-operator/blob/main/scripts/flush-rbac-cache.sh) only affects koku-side cache now.
 - Known gaps at time of writing: seed parity for price-list roles
-  (see OPERATOR-SWAP.md §0.3); `main` flag polish is in-repo only.
+  (see [OPERATOR-SWAP.md §0.3](OPERATOR-SWAP.md#0-open-decisions)); `main` flag polish is in-repo only.
