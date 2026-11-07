@@ -209,7 +209,10 @@ func TestSyncEnvFallback(t *testing.T) {
 	t.Setenv("KEYCLOAK_CLIENT_ID", "rbac-keycloak-sync")
 	t.Setenv("KEYCLOAK_CLIENT_SECRET", "s3cret")
 	t.Setenv("SYNC_ORG_GROUP_PREFIX", "org-")
-	if err := run([]string{"sync", "--org", "100001", "--group", "CI Test Admin", "--prune-orphans=false"}, dsn); err != nil {
+	// The operator's CronJob sets no SYNC_GROUP: principals only, no tenant
+	// group is required to exist.
+	t.Setenv("SYNC_GROUP", "")
+	if err := run([]string{"sync", "--org", "100001", "--prune-orphans=false"}, dsn); err != nil {
 		t.Fatalf("sync via env: %v", err)
 	}
 	got := principals(t, dsn, "100001")

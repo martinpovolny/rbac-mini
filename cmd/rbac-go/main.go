@@ -141,7 +141,7 @@ func run(args []string, databaseURL string) error {
 		clientSecret := fs.String("client-secret", os.Getenv("KEYCLOAK_CLIENT_SECRET"), "client secret [$KEYCLOAK_CLIENT_SECRET]")
 		org := fs.String("org", os.Getenv("SYNC_ORG_ID"), "org_id: single-org sync [$SYNC_ORG_ID]")
 		orgGroupPrefix := fs.String("org-group-prefix", envOr("SYNC_ORG_GROUP_PREFIX", "org-"), "discover orgs from Keycloak groups with this prefix when --org is empty [$SYNC_ORG_GROUP_PREFIX]")
-		group := fs.String("group", envOr("SYNC_GROUP", "CI Test Admin"), "tenant group for synced users [$SYNC_GROUP]")
+		group := fs.String("group", os.Getenv("SYNC_GROUP"), "optional tenant group for synced users; empty means principals only [$SYNC_GROUP]")
 		prune := fs.Bool("prune-orphans", envBool("SYNC_PRUNE_ORPHANS", true), "delete principals gone from Keycloak [$SYNC_PRUNE_ORPHANS]")
 		adminRole := fs.String("org-admin-role", envOr("SYNC_ORG_ADMIN_SUBGROUP", "org-admin"), "realm role marking org administrators [$SYNC_ORG_ADMIN_SUBGROUP]")
 		if err := fs.Parse(rest); err != nil {
