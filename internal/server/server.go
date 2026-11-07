@@ -637,7 +637,32 @@ func (s *Server) handleRolesList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	items, total, err := role.List(s.db, user.OrgID, q.Get("name"), limit, offset)
+	filter := role.Filter{Name: q.Get("name"), DisplayName: q.Get("display_name"), OrderBy: "name"}
+	if filter.Name != "" || filter.DisplayName != "" {
+		if filter.NameMatch, err = queryEnum(q, "name_match",
+			[]string{"partial", "exact"}, "partial"); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if filter.System, err = queryBoolPtr(q, "system"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	orderBy := q.Get("order_by")
+	if strings.HasPrefix(orderBy, "-") {
+		filter.Desc = true
+		orderBy = strings.TrimPrefix(orderBy, "-")
+	}
+	switch orderBy {
+	case "", "name":
+	case "display_name", "policyCount":
+		filter.OrderBy = orderBy
+	default:
+		writeError(w, http.StatusBadRequest, "invalid order_by")
+		return
+	}
+	items, total, err := role.List(s.db, user.OrgID, filter, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "unexpected error")
 		return

@@ -141,12 +141,58 @@ func Create(db *store.DB, orgID, name, displayName, description string, grants [
 }
 
 // List returns tenant (+public platform) roles ordered by name.
-func List(db *store.DB, orgID, nameFilter string, limit, offset int) (items []Role, total int, err error) {
+// Filter mirrors the v1 role list parameters the UI uses (Django RoleFilter).
+// NameMatch empty or "partial" is a case-insensitive contains, "exact" is a
+// case-insensitive equality; it applies to both name and display_name.
+type Filter struct {
+	Name        string
+	DisplayName string
+	NameMatch   string
+	System      *bool
+	// OrderBy is "name" (default), "display_name" or "policyCount".
+	OrderBy string
+	Desc    bool
+}
+
+func List(db *store.DB, orgID string, f Filter, limit, offset int) (items []Role, total int, err error) {
 	where := ` (t.org_id = ? OR t.tenant_name = 'public')`
 	args := []any{orgID}
-	if nameFilter != "" {
-		where += ` AND LOWER(r.name) LIKE '%' || LOWER(?) || '%'`
-		args = append(args, nameFilter)
+	match := func(column, value string) {
+		if f.NameMatch == "exact" {
+			where += ` AND LOWER(` + column + `) = ?`
+			args = append(args, strings.ToLower(value))
+		} else {
+			where += ` AND LOWER(` + column + `) LIKE ?`
+			args = append(args, "%"+strings.ToLower(value)+"%")
+		}
+	}
+	if f.Name != "" {
+		match("r.name", f.Name)
+	}
+	if f.DisplayName != "" {
+		match("r.display_name", f.DisplayName)
+	}
+	if f.System != nil {
+		where += ` AND r.system = ?`
+		if *f.System {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+	order := "LOWER(r.name)"
+	switch f.OrderBy {
+	case "", "name":
+	case "display_name":
+		order = "LOWER(r.display_name)"
+	case "policyCount":
+		order = `(SELECT COUNT(DISTINCT pol.id) FROM policy_roles prl
+			JOIN policies pol ON pol.id = prl.policy_id WHERE prl.role_id = r.id)`
+	default:
+		return nil, 0, fmt.Errorf("invalid order_by")
+	}
+	if f.Desc {
+		order += " DESC"
 	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM roles r
@@ -155,7 +201,7 @@ func List(db *store.DB, orgID, nameFilter string, limit, offset int) (items []Ro
 	}
 	q := `SELECT r.uuid, r.name, r.display_name, COALESCE(r.description,''), r.system
 		FROM roles r JOIN tenants t ON t.id = r.tenant_id
-		WHERE` + where + ` ORDER BY r.name LIMIT ? OFFSET ?`
+		WHERE` + where + ` ORDER BY ` + order + ` LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := db.Query(q, args...)
 	if err != nil {

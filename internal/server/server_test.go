@@ -692,6 +692,79 @@ func TestRolesList(t *testing.T) {
 	}
 }
 
+// TestRolesListNameFilters: the create-role wizard checks both name and
+// display_name availability with name_match=exact. Ignoring display_name
+// returned every role, so any new role looked taken.
+func TestRolesListNameFilters(t *testing.T) {
+	s, header := testServerSeeded(t)
+	exec := func(q string) {
+		t.Helper()
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	exec(`INSERT INTO roles(uuid, name, display_name, tenant_id) VALUES('r-tr','test-role','Test Role',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO roles(uuid, name, display_name, tenant_id) VALUES('r-tr2','test-role-2','Second Test',
+		(SELECT id FROM tenants WHERE org_id='100001'))`)
+
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"name exact hit", "?name=test-role&name_match=exact", []string{"test-role"}},
+		{"name exact second", "?name=test-role-2&name_match=exact", []string{"test-role-2"}},
+		{"name exact prefix is free", "?name=test-rol&name_match=exact", []string{}},
+		{"name partial", "?name=test-role", []string{"test-role", "test-role-2"}},
+		{"display name exact hit", "?display_name=Test%20Role&name_match=exact", []string{"test-role"}},
+		{"display name exact free", "?display_name=test-role&name_match=exact", []string{}},
+		{"display name partial", "?display_name=second", []string{"test-role-2"}},
+		{"display name desc", "?order_by=-display_name&name=test-role&name_match=partial",
+			[]string{"test-role", "test-role-2"}},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/"+tc.query, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200 (body: %s)", tc.name, rec.Code, rec.Body.String())
+			continue
+		}
+		var body principalPage
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: decode: %v", tc.name, err)
+		}
+		var names []string
+		for _, item := range body.Data {
+			names = append(names, item["name"].(string))
+		}
+		if len(names) != len(tc.want) || body.Meta.Count != len(tc.want) {
+			t.Errorf("%s: roles = %v (count %d), want %v", tc.name, names, body.Meta.Count, tc.want)
+			continue
+		}
+		for i := range names {
+			if names[i] != tc.want[i] {
+				t.Errorf("%s: roles = %v, want %v", tc.name, names, tc.want)
+				break
+			}
+		}
+	}
+
+	for _, query := range []string{
+		"?name=x&name_match=bogus", "?system=maybe", "?order_by=modified",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/roles/"+query, nil)
+		req.Header.Set("X-Rh-Identity", header)
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", query, rec.Code)
+		}
+	}
+}
+
 // createRole posts a role and returns its uuid.
 func createRole(t *testing.T, s *Server, header, name, perm string) string {
 	t.Helper()
