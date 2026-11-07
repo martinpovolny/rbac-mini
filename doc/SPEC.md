@@ -8,34 +8,34 @@ Go replacement for `insights-rbac`, scoped to what `../koku` and
 ### In scope (must-have)
 
 * `GET /api/rbac/v1/access/?application=&limit=&offset=&order_by=` — the only
-  endpoint koku calls at runtime (`koku/koku/rbac.py:189-262`,
-  `rbac/management/access/view.py:192-221`).
+  endpoint koku calls at runtime ([koku/koku/rbac.py:189-262](https://github.com/project-koku/koku/blob/main/koku/koku/rbac.py#L189-L262),
+  [rbac/management/access/view.py:192-221](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/access/view.py#L192-L221)).
 * `GET /api/rbac/v1/status/`, `GET /api/rbac/v1/ready/` — probes
-  (`rbac/api/urls.py:27-31`, `operator/internal/resources/rbac.go:129`).
+  ([rbac/api/urls.py:27-31](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/api/urls.py#L27-L31), [operator/internal/resources/rbac.go:129](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac.go#L129)).
 * `GET /metrics` — Prometheus, ServiceMonitor compat.
 * Seed job — loads `cost-management` / `sources` roles+permissions from the
   existing JSON seed files into Postgres (replaces
   `python manage.py migrate + seeds --skip-notifications`,
-  `operator/internal/resources/migration.go:147-205`,
-  `rbac_seed_configmap.go:12-104`).
+  [operator/internal/resources/migration.go:147-205](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/migration.go#L147-L205),
+  [rbac_seed_configmap.go:12-104](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac_seed_configmap.go#L12-L104)).
 * Bootstrap/sync job — creates `Tenant`, `Group`+`Policy`+`Principal` rows and
   syncs Keycloak users into `Principal` (replaces `manage.py shell` ORM
-  scripts in `test/pytest/rbac_bootstrap_scripts.py`,
-  `test/pytest/suites/e2e/test_rbac_access.py:198-317`, and
-  `rbac_keycloak_sync.go:34-128`). Direct SQL, no Django ORM.
+  scripts in [test/pytest/rbac_bootstrap_scripts.py](https://github.com/project-koku/koku-service-operator/blob/main/test/pytest/rbac_bootstrap_scripts.py),
+  [test/pytest/suites/e2e/test_rbac_access.py:198-317](https://github.com/project-koku/koku-service-operator/blob/main/test/pytest/suites/e2e/test_rbac_access.py#L198-L317), and
+  [rbac_keycloak_sync.go:34-128](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac_keycloak_sync.go#L34-L128)). Direct SQL, no Django ORM.
 * Identity header auth — decode `x-rh-identity` (base64 JSON), resolve tenant,
   derive `User{username, admin, org_id, client_id, is_service_account}`
-  (`rbac/rbac/middleware.py`, `api/models.py:110-152`).
-* On-prem UI (v1 User Access, `koku-ui/apps/rbac-ui-onprem` federated wrapper;
+  ([`rbac/rbac/middleware.py`](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/rbac/middleware.py), [`api/models.py:110-152`](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/api/models.py#L110-L152)).
+* On-prem UI (v1 User Access, [koku-ui/apps/rbac-ui-onprem](https://github.com/project-koku/koku-ui/tree/main/apps/rbac-ui-onprem) federated wrapper;
   see doc/FINDINGS.md §7). The operator runs with
   `BYPASS_BOP_VERIFICATION=True`, so principals come straight from the DB
-  (fake `foo`/`bar`/`baz` attrs, as in `management/principal/proxy.py:173`):
+  (fake `foo`/`bar`/`baz` attrs, as in [management/principal/proxy.py:173](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/principal/proxy.py#L173)):
   * `GET /api/rbac/v1/principals/?limit=&offset=&usernames=` — Users page
     (paginated, `meta{count,limit,offset}`).
   * `GET /api/rbac/v1/roles/` + `POST|GET|PUT|PATCH|DELETE /api/rbac/v1/roles/{uuid}/`
     (+ `GET .../access/`) — Roles pages + creation wizard. Create validates
     `application ∈ ROLE_CREATE_ALLOW_LIST`
-    (`management/role/view.py:validate_role`); `resourceDefinitions: []`
+    ([management/role/view.py:validate_role](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/role/view.py)); `resourceDefinitions: []`
     means global scope and is valid.
   * `GET /api/rbac/v1/groups/` + membership/role sub-paths used by the UI
     (list, detail, principals, roles) — Groups pages.
@@ -50,16 +50,16 @@ Go replacement for `insights-rbac`, scoped to what `../koku` and
   service-accounts/IT-service paths — not used by koku or the on-prem UI.
   (Note: e2e bypasses role CRUD via ORM only because the Django API rejects
   custom roles for cost-management allow-list reasons;
-  `test_rbac_access.py:507-508` — rbac-go implements the validated path
+  [test_rbac_access.py:507-508](https://github.com/project-koku/koku-service-operator/blob/main/test/pytest/suites/e2e/test_rbac_access.py#L507-L508) — rbac-go implements the validated path
   directly.)
 * `MCP mcp/`, `_private/*` (~30 utils), `migration_tool`, Kafka/Debezium
   outbox, Celery worker/beat, BOP/IT/UMB/notifications.
 * Valkey/Redis cache. Phase 1 = direct SQL on every request (no cache
   process). `ACCESS_CACHE_ENABLED` / `REDIS_*` envs accepted as no-ops so Helm
   chart tests pass; `cache.clear()` / `FLUSHALL` become no-ops. Koku-side 30s
-  cache (`koku/middleware.py:380-393`) absorbs the load. Add `go-redis` only
+  cache ([koku/middleware.py:380-393](https://github.com/project-koku/koku/blob/main/koku/koku/middleware.py#L380-L393)) absorbs the load. Add `go-redis` only
   if load tests demand it, using existing key format
-  `rbac::policy::tenant={org}::user={uuid}` (`management/cache.py:200-260`).
+  `rbac::policy::tenant={org}::user={uuid}` ([management/cache.py:200-260](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/cache.py#L200-L260)).
 
 ## 2. API Contract
 
@@ -68,12 +68,12 @@ Go replacement for `insights-rbac`, scoped to what `../koku` and
 Request: `application=cost-management[,sources]`, `limit` (default 10 in DRF,
 koku sends `limit=100`), `offset`, `order_by=[-](application|resource_type|verb)`.
 Header `X-Rh-Identity: <base64>` required. No DRF permission gate
-(`view.py:161`).
+([`view.py:161`](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/access/view.py#L161)).
 
 Response (must be byte-compatible — koku follows `links.next` as
-`base_url + next_link`, `koku/rbac.py:198-238`). Canonical contract is
-`doc/openapi.v1-subset.json`, extracted from
-`docs/source/specs/openapi.json` (paths `/access/`, `/status/` only):
+`base_url + next_link`, [koku/rbac.py:198-238](https://github.com/project-koku/koku/blob/main/koku/koku/rbac.py#L198-L238)). Canonical contract is
+[openapi.v1-subset.json](openapi.v1-subset.json), extracted from
+[docs/source/specs/openapi.json](https://github.com/RedHatInsights/insights-rbac/blob/master/docs/source/specs/openapi.json) (paths `/access/`, `/status/` only):
 
 ```json
 {
@@ -86,19 +86,19 @@ Response (must be byte-compatible — koku follows `links.next` as
 }
 ```
 
-Query semantics (`management/querysets.py:244-270`, `access/view.py:163-190`):
+Query semantics ([management/querysets.py:244-270](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/querysets.py#L244-L270), [access/view.py:163-190](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/access/view.py#L163-L190)):
 
-1. Resolve `Principal` by username + tenant (lowercased, `principal/model.py:55-58`).
+1. Resolve `Principal` by username + tenant (lowercased, [principal/model.py:55-58](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/principal/model.py#L55-L58)).
    Unknown principal → empty `data`, HTTP 200 (koku treats `[]` as denied).
 2. Join principal → `group_principals` → groups (tenant-scoped + `public`
    tenant platform roles) → policies → policy_roles → roles → access →
    permission + resourceDefinitions.
 3. Filter `permission.application IN (requested apps)`. Include
    `platform_default` and `admin_default` (org-admin only) groups
-   (`querysets.py:291-316`).
+   ([querysets.py:291-316](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/querysets.py#L291-L316)).
 4. Deduplicate on `(permission_id, attribute_filter)` with portable
    `SELECT DISTINCT` / `GROUP BY` (never Postgres `DISTINCT ON` —
-   `access/view.py:163-166` is PG-only). Order/paginate in Go. `status` param:
+   [access/view.py:163-166](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/management/access/view.py#L163-L166) is PG-only). Order/paginate in Go. `status` param:
    only `enabled` supported.
 
 Errors: `400` on bad `order_by`/`status`/v2-org misuse; never `403` from this
@@ -106,7 +106,7 @@ endpoint (koku maps non-200 `[]` → deny, `5xx`/conn-error → `424`).
 
 ### GET /api/rbac/v1/status/, /ready/, /metrics
 
-* `status/` → `{"status": "ok"}` (probe target, `rbac.go:48` `BYPASS_BOP`).
+* `status/` → `{"status": "ok"}` (probe target, [`rbac.go:48`](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/rbac.go#L48) `BYPASS_BOP`).
 * `ready/` → `200` when the SQL DB is reachable (`sql.Ping`), else `503`.
   Must work identically for SQLite file and Postgres.
 * `metrics/` → Prometheus exposition (at minimum `up`, request counters by
@@ -167,7 +167,7 @@ Placeholder policy: write queries once with `?` placeholders and rebind to
 
 Seed data: `public` tenant + `Cost Administrator` (`cost-management:*:*`),
 `Sources administrator`, platform-default viewer roles — same permission
-strings as `operator/internal/resources/rbac_seed/data/*.json`. Seed job must be
+strings as [operator/internal/resources/rbac_seed/data/*.json](https://github.com/project-koku/koku-service-operator/tree/main/internal/resources/rbac_seed/data/). Seed job must be
 idempotent (`get_or_create` semantics).
 
 ## 4. Identity Header
@@ -188,7 +188,7 @@ empty access (matches bootstrap behavior).
 * Listens `:8080`, plain HTTP (`RBACAPIDeployment`, `RBACAPIService`,
   `RBAC_SERVICE_{HOST,PORT,PATH=/api/rbac/v1/access/,PROTOCOL=http}`).
 * Migration+seed as `initContainer` or `Job` equivalent to
-  `migration.go:147-205` (idempotent SQL, no `manage.py`).
+  [migration.go:147-205](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/migration.go#L147-L205) (idempotent SQL, no `manage.py`).
 * Keycloak sync as `CronJob` equivalent: list realm users via client-credentials,
   upsert `principals`, add to org group, `SYNC_PRUNE_ORPHANS` deletes stale rows.
 * Probes `GET /api/rbac/v1/status/`; no Celery, no Kafka, no Clowder dependency
@@ -207,12 +207,12 @@ decision beyond the access-list query, no cross-account flows.
    parsing, seed idempotency.
 2. Same suite passes against real Postgres in CI (`make test-sqlite`,
    `make test-postgres`); no query text differs except placeholder rebinding.
-3. Koku `koku/test_rbac.py` logic passes against it (follow `links.next`,
+3. Koku [koku/test_rbac.py](https://github.com/project-koku/koku/blob/main/koku/koku/test_rbac.py) logic passes against it (follow `links.next`,
    `424` only on `5xx`/down).
-4. Operator e2e `test_rbac_access.py` personas (alice=project `payment` only,
+4. Operator e2e [`test_rbac_access.py`](https://github.com/project-koku/koku-service-operator/blob/main/test/pytest/suites/e2e/test_rbac_access.py) personas (alice=project `payment` only,
    bob=cluster-alpha only, carol=full) return correct filtering after ORM-seed
    equivalent loaded via seed/bootstrap jobs.
-5. Helm `test_external_valkey.py` env assertions still pass (envs present).
+5. Helm [`test_external_valkey.py`](https://github.com/project-koku/koku-service-operator/blob/main/test/pytest/suites/helm/test_external_valkey.py) env assertions still pass (envs present).
 6. Query latency (BenchmarkAccessQuery: 200 principals, 5 permissions with
    resourceDefinitions each, Apple M1 Max): SQLite :memory: ~0.7ms/op,
    Postgres 16 over localhost TCP ~3.7ms/op — far inside the 50ms budget
@@ -225,7 +225,7 @@ decision beyond the access-list query, no cross-account flows.
 Django tests require ORM + Postgres + mocks; Go tests are black-box HTTP +
 SQLite with the same scenarios/fixtures. Sources (parent repo paths):
 
-* `tests/management/access/test_view.py` — fixture graph (`setUp:39-135`:
+* [`tests/management/access/test_view.py`](https://github.com/RedHatInsights/insights-rbac/blob/master/tests/management/access/test_view.py) — fixture graph (`setUp:39-135`:
   tenant → principal → group → policy → role → access/permission +
   `resourceDefinitions`) and helpers (`create_role:147`, `create_policy:161`,
   `create_platform_default_resource:170`, `create_role_and_permission:182`)
@@ -238,19 +238,19 @@ SQLite with the same scenarios/fixtures. Sources (parent repo paths):
   `pagination:1048`, `invalid_ordering/limit:1096-1107`.
   Drop: `@patch is_v2_access_check…`, `TenantCache`/`PRINCIPAL_CACHE`,
   `V2TenantBootstrapService`, `Workspace` bootstrap (`:66-68,83-92`).
-* `tests/identity_request.py` (`_create_request_context`) — reimplement the
+* [`tests/identity_request.py`](https://github.com/RedHatInsights/insights-rbac/blob/master/tests/identity_request.py) (`_create_request_context`) — reimplement the
   `x-rh-identity` minting helper in Go (user, org-admin, service-account
   variants) for all fixture setup.
-* `koku/koku/test_rbac.py:120` + `koku/rbac.py:67-181`
+* [koku/koku/test_rbac.py:120](https://github.com/project-koku/koku/blob/main/koku/koku/test_rbac.py#L120) + [koku/rbac.py:67-181](https://github.com/project-koku/koku/blob/main/koku/koku/rbac.py#L67-L181)
   (`_normalize/_process_acls`, `links.next` following, `[]` on non-200) —
-  port as `contract_test.go` against `doc/openapi.v1-subset.json`.
-* `operator/test/pytest/suites/e2e/test_rbac_access.py:198-317`
+  port as [contract_test.go](../internal/contract/contract_test.go) against [openapi.v1-subset.json](openapi.v1-subset.json).
+* [operator/test/pytest/suites/e2e/test_rbac_access.py:198-317](https://github.com/project-koku/koku-service-operator/blob/main/test/pytest/suites/e2e/test_rbac_access.py#L198-L317)
   (`RBAC_SETUP_SCRIPT`) — alice/bob/carol personas as Go seed-fixture tests.
-* Explicitly not ported: `tests/rbac/test_cache.py` (no Valkey),
+* Explicitly not ported: [tests/rbac/test_cache.py](https://github.com/RedHatInsights/insights-rbac/blob/master/tests/rbac/test_cache.py) (no Valkey),
   mocked redis/kafka/kessel/BOP tests, v2/Kessel assertions
   (`test_access_v2_*:1297-1398`), cross-account (`:527-573`, out of scope).
 
-Layout: `internal/access/access_test.go` (SQLite fixtures mirroring
-`test_view.py:setUp`, one subtest per case above) + `contract_test.go`
+Layout: [internal/access/access_test.go](../internal/access/access_test.go) (SQLite fixtures mirroring
+[test_view.py:setUp](https://github.com/RedHatInsights/insights-rbac/blob/master/tests/management/access/test_view.py#L39), one subtest per case above) + [contract_test.go](../internal/contract/contract_test.go)
 (koku client logic). Both run under `make test-sqlite` and
 `make test-postgres`.
