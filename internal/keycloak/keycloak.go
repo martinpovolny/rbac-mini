@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -158,6 +159,13 @@ func fetchOrgAdmins(cfg Config, token string) (map[string]bool, error) {
 		}
 		if resp.StatusCode == http.StatusNotFound {
 			resp.Body.Close()
+			return out, nil
+		}
+		if resp.StatusCode == http.StatusForbidden {
+			// A client without view-realm/view-users cannot read role members.
+			// Keep syncing users; org-admin simply stays false.
+			resp.Body.Close()
+			log.Printf("keycloak: cannot list %q role users (403); org-admin flags will be false", role)
 			return out, nil
 		}
 		if resp.StatusCode != http.StatusOK {

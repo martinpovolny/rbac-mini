@@ -273,6 +273,30 @@ func TestSyncRoleMissingMeansNoAdmins(t *testing.T) {
 	if !ok || alice.IsOrgAdmin {
 		t.Errorf("alice = %+v, present=%v, want present and not org admin", alice, ok)
 	}
+
+	// A sync client without role-read permission must still sync users.
+	denied := http.NewServeMux()
+	denied.HandleFunc("/realms/onprem/protocol/openid-connect/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "test-token"})
+	})
+	denied.HandleFunc("/admin/realms/onprem/users", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{{"username": "alice", "enabled": true}})
+	})
+	denied.HandleFunc("/admin/realms/onprem/roles/org-admin/users", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	})
+	deniedSrv := httptest.NewServer(denied)
+	defer deniedSrv.Close()
+	if err := Sync(db, Config{
+		BaseURL: deniedSrv.URL, Realm: "onprem",
+		ClientID: "id", ClientSecret: "secret", OrgID: "100001",
+	}); err != nil {
+		t.Fatalf("Sync with forbidden role lookup: %v", err)
+	}
+	alice, ok = readPrincipal(t, db, "alice")
+	if !ok || alice.IsOrgAdmin {
+		t.Errorf("alice after 403 = %+v, present=%v, want present and not org admin", alice, ok)
+	}
 }
 
 // stubKeycloakGroups emulates group discovery: one org- group with attributes

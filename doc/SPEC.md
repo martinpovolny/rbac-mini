@@ -199,8 +199,10 @@ empty access (matches bootstrap behavior).
   [migration.go:147-205](https://github.com/project-koku/koku-service-operator/blob/main/internal/resources/migration.go#L147-L205) (idempotent SQL, no `manage.py`).
 * Keycloak sync as `CronJob` equivalent: list realm users via client-credentials,
   upsert `principals` with their profile (`email`, names, `enabled`) and the
-  `org-admin` realm role (`SYNC_ORG_ADMIN_SUBGROUP`, default `org-admin`), add
-  to org group, `SYNC_PRUNE_ORPHANS` deletes stale rows. Disabled users are
+  realm role named by `SYNC_ORG_ADMIN_SUBGROUP` (default `org-admin`; in
+  rbac-go the value is the realm role, not the nested group the Django script
+  logs), add to org group, `SYNC_PRUNE_ORPHANS` deletes stale rows. A 403 on
+  the role lookup keeps the user sync and leaves `is_org_admin` false. Disabled users are
   kept: they still exist, keep group bindings, and can be re-enabled; the API
   hides them with the default `status=enabled` filter. This replaces the
   separate `principal-profile` sidecar — Keycloak is read only by the sync.
