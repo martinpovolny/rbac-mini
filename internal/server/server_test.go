@@ -344,6 +344,170 @@ func TestPrincipalsList(t *testing.T) {
 	}
 }
 
+// principalPage is the decoded GET /principals/ response.
+type principalPage struct {
+	Meta struct {
+		Count  int `json:"count"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	} `json:"meta"`
+	Data []map[string]any `json:"data"`
+}
+
+func getPrincipals(t *testing.T, s *Server, header, query string) (int, principalPage) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/rbac/v1/principals/"+query, nil)
+	req.Header.Set("X-Rh-Identity", header)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	var page principalPage
+	if rec.Code == http.StatusOK {
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+	}
+	return rec.Code, page
+}
+
+func usernamesOf(page principalPage) []string {
+	out := make([]string, 0, len(page.Data))
+	for _, item := range page.Data {
+		name, _ := item["username"].(string)
+		out = append(out, name)
+	}
+	return out
+}
+
+// TestPrincipalsListProfiles: the Users page must get the SaaS-shaped
+// contract (is_active/is_org_admin/user_id/type) and real identity fields
+// instead of the BYPASS foo/bar/baz stubs (COST-8167).
+func TestPrincipalsListProfiles(t *testing.T) {
+	s, header := testServerSeeded(t)
+	if _, err := s.db.Exec(`UPDATE principals SET email='test_user@example.com',
+		first_name='Test', last_name='User', user_id='kc-test' WHERE username='test_user'`); err != nil {
+		t.Fatalf("profile update: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO principals(uuid, username, type, user_id, email,
+		first_name, last_name, is_org_admin, is_active, tenant_id)
+		VALUES('pu-admin','orgadmin','user','kc-admin','orgadmin@example.com',
+		'Org','Admin',1,1,(SELECT id FROM tenants WHERE org_id='100001'))`); err != nil {
+		t.Fatalf("orgadmin: %v", err)
+	}
+
+	code, page := getPrincipals(t, s, header, "?limit=20")
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if page.Meta.Count != 2 {
+		t.Fatalf("count = %d, want 2", page.Meta.Count)
+	}
+	byName := map[string]map[string]any{}
+	for _, item := range page.Data {
+		byName[item["username"].(string)] = item
+	}
+	me := byName["test_user"]
+	if me == nil {
+		t.Fatalf("test_user missing from %v", page.Data)
+	}
+	if me["is_active"] != true || me["is_org_admin"] != false {
+		t.Errorf("test_user flags = %v/%v, want true/false", me["is_active"], me["is_org_admin"])
+	}
+	if me["first_name"] != "Test" || me["last_name"] != "User" ||
+		me["email"] != "test_user@example.com" || me["user_id"] != "kc-test" || me["type"] != "user" {
+		t.Errorf("test_user profile = %v", me)
+	}
+	if me["email"] == "baz" || me["first_name"] == "foo" || me["last_name"] == "bar" {
+		t.Errorf("test_user still has BYPASS placeholders: %v", me)
+	}
+	if admin := byName["orgadmin"]; admin == nil || admin["is_org_admin"] != true {
+		t.Errorf("orgadmin = %v, want is_org_admin true", admin)
+	}
+}
+
+// TestPrincipalsListFilters covers the query parameters the RBAC UI uses on
+// the Users page and the user-detail page.
+func TestPrincipalsListFilters(t *testing.T) {
+	s, header := testServerSeeded(t)
+	exec := func(q string) {
+		t.Helper()
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	exec(`INSERT INTO principals(uuid, username, type, is_org_admin, is_active, tenant_id)
+		VALUES('pu-admin','orgadmin','user',1,1,(SELECT id FROM tenants WHERE org_id='100001'))`)
+	exec(`INSERT INTO principals(uuid, username, type, is_active, tenant_id)
+		VALUES('pu-old','olduser','user',0,(SELECT id FROM tenants WHERE org_id='100001'))`)
+
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"default status enabled", "?limit=20", []string{"orgadmin", "test_user"}},
+		{"status disabled", "?status=disabled", []string{"olduser"}},
+		{"status all", "?status=all", []string{"olduser", "orgadmin", "test_user"}},
+		{"admin only", "?admin_only=true", []string{"orgadmin"}},
+		{"username exact", "?usernames=TEST_USER", []string{"test_user"}},
+		{"username partial", "?usernames=ORG&match_criteria=partial", []string{"orgadmin"}},
+		{"sort desc", "?status=all&sort_order=desc", []string{"test_user", "orgadmin", "olduser"}},
+		{"email exact", "?email=orgadmin@local", []string{"orgadmin"}},
+		{"email partial", "?email=OLD&match_criteria=partial&status=all", []string{"olduser"}},
+		{"unknown detail lookup", "?usernames=ghost", []string{"ghost"}},
+		{"unknown detail respects status", "?usernames=ghost&status=disabled", []string{}},
+	}
+	for _, tc := range cases {
+		code, page := getPrincipals(t, s, header, tc.query)
+		if code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200", tc.name, code)
+			continue
+		}
+		got := usernamesOf(page)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: usernames = %v, want %v", tc.name, got, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Errorf("%s: usernames = %v, want %v", tc.name, got, tc.want)
+				break
+			}
+		}
+		if page.Meta.Count != len(tc.want) {
+			t.Errorf("%s: meta.count = %d, want %d", tc.name, page.Meta.Count, len(tc.want))
+		}
+	}
+
+	code, page := getPrincipals(t, s, header, "?usernames=ghost")
+	if code != http.StatusOK || page.Meta.Count != 1 {
+		t.Fatalf("unknown lookup = %d / %+v, want 200 with one stub", code, page)
+	}
+	stub := page.Data[0]
+	if stub["email"] != "ghost@local" || stub["is_active"] != true ||
+		stub["is_org_admin"] != false || stub["user_id"] != "ghost" {
+		t.Errorf("unknown stub = %v", stub)
+	}
+
+	_, page = getPrincipals(t, s, header, "?username_only=true&status=all")
+	for _, item := range page.Data {
+		if len(item) != 1 || item["username"] == nil {
+			t.Errorf("username_only item = %v, want only username", item)
+		}
+	}
+}
+
+func TestPrincipalsListInvalidValues(t *testing.T) {
+	s, header := testServerSeeded(t)
+	for _, query := range []string{
+		"?status=bogus", "?sort_order=sideways", "?admin_only=yes",
+		"?username_only=maybe", "?match_criteria=fuzzy", "?type=bogus",
+	} {
+		if code, _ := getPrincipals(t, s, header, query); code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", query, code)
+		}
+	}
+}
+
 // seedPermissions adds cost-management permissions (one scoped, one global)
 // next to the fixture's app:*:*.
 func seedPermissions(t *testing.T, db interface {

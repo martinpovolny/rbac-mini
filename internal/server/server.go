@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -138,11 +139,101 @@ func (s *Server) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	items, total, err := principal.List(s.db, user.OrgID, limit, offset)
+	filter, err := principalFilter(q, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	items, total, err := principal.List(s.db, user.OrgID, filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "unexpected error")
 		return
 	}
+	if filter.UsernameOnly {
+		only := make([]map[string]string, 0, len(items))
+		for _, item := range items {
+			only = append(only, map[string]string{"username": item.Username})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"meta":  map[string]any{"count": total, "limit": limit, "offset": offset},
+			"links": principalsLinks(r, limit, offset, total),
+			"data":  only,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meta":  map[string]any{"count": total, "limit": limit, "offset": offset},
+		"links": principalsLinks(r, limit, offset, total),
+		"data":  items,
+	})
+}
+
+// principalFilter validates the GET /principals/ query parameters the RBAC
+// UI sends. Defaults mirror the Django view: type=user, status=enabled,
+// match_criteria=exact, sort_order=asc.
+func principalFilter(q url.Values, limit, offset int) (principal.Filter, error) {
+	f := principal.Filter{Limit: limit, Offset: offset}
+	var err error
+	if f.Type, err = queryEnum(q, "type", []string{"user", "service-account", "all"}, "user"); err != nil {
+		return f, err
+	}
+	if f.MatchCriteria, err = queryEnum(q, "match_criteria", []string{"partial", "exact"}, "exact"); err != nil {
+		return f, err
+	}
+	if f.Status, err = queryEnum(q, "status", []string{"enabled", "disabled", "all"}, "enabled"); err != nil {
+		return f, err
+	}
+	sortOrder, err := queryEnum(q, "sort_order", []string{"asc", "desc"}, "asc")
+	if err != nil {
+		return f, err
+	}
+	f.SortDesc = sortOrder == "desc"
+	adminOnly, err := queryBool(q, "admin_only")
+	if err != nil {
+		return f, err
+	}
+	if f.UsernameOnly, err = queryBool(q, "username_only"); err != nil {
+		return f, err
+	}
+	for _, name := range strings.Split(strings.ReplaceAll(q.Get("usernames"), " ", ""), ",") {
+		if name != "" {
+			f.Usernames = append(f.Usernames, name)
+		}
+	}
+	f.Email = strings.TrimSpace(q.Get("email"))
+	// Django only forwards admin_only on unfiltered requests; the UI never
+	// combines it with a username or email filter.
+	if len(f.Usernames) == 0 && f.Email == "" {
+		f.AdminOnly = adminOnly
+	}
+	return f, nil
+}
+
+func queryEnum(q url.Values, key string, allowed []string, def string) (string, error) {
+	value := q.Get(key)
+	if value == "" {
+		return def, nil
+	}
+	for _, candidate := range allowed {
+		if value == candidate {
+			return value, nil
+		}
+	}
+	return "", fmt.Errorf("invalid %s", key)
+}
+
+func queryBool(q url.Values, key string) (bool, error) {
+	switch q.Get(key) {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, fmt.Errorf("invalid %s", key)
+	}
+}
+
+func principalsLinks(r *http.Request, limit, offset, total int) map[string]any {
 	link := func(off int, present bool) *string {
 		if !present {
 			return nil
@@ -157,16 +248,12 @@ func (s *Server) handlePrincipals(w http.ResponseWriter, r *http.Request) {
 	if total > 0 {
 		lastOff = (total - 1) / limit * limit
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"meta": map[string]any{"count": total, "limit": limit, "offset": offset},
-		"links": map[string]any{
-			"first":    link(0, true),
-			"next":     link(offset+limit, offset+limit < total),
-			"previous": link(ifGE0(offset-limit), offset-limit >= 0),
-			"last":     link(lastOff, true),
-		},
-		"data": items,
-	})
+	return map[string]any{
+		"first":    link(0, true),
+		"next":     link(offset+limit, offset+limit < total),
+		"previous": link(ifGE0(offset-limit), offset-limit >= 0),
+		"last":     link(lastOff, true),
+	}
 }
 
 func ifGE0(v int) int {
