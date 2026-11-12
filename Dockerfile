@@ -1,7 +1,7 @@
 # rbac-go: minimal on-prem RBAC v1 (replaces insights-rbac where only
 # koku + koku-service-operator need it). UBI-based like the operator images;
 # ubi-minimal (not ubi-micro) so the shell entrypoint below can run.
-FROM docker.io/library/golang:1.27 AS build
+FROM registry.access.redhat.com/ubi9/go-toolset:1.27 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
